@@ -119,7 +119,7 @@ class FortifyServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('assistant', function (Request $request) {
-            return Limit::perMinute(5)->by((string) $request->user()?->id);
+            return Limit::perMinute(15)->by((string) $request->user()?->id);
         });
 
         RateLimiter::for('passkeys', function (Request $request) {

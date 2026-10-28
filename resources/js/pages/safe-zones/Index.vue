@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { MapPin, ShieldCheck, Users, Wifi, Droplets, HeartPulse, Building2 } from '@lucide/vue';
+import { MapPin, Navigation, ShieldCheck, Users, Wifi, Droplets, HeartPulse, Building2 } from '@lucide/vue';
 import { computed } from 'vue';
+import LocationPanel from '@/components/LocationPanel.vue';
+import { directionsUrl, distanceKm, useGeolocation } from '@/composables/useGeolocation';
 
 const props = defineProps<{
     zones: Array<{
@@ -9,6 +11,9 @@ const props = defineProps<{
         name: string;
         address: string;
         district_name: string | null;
+        latitude: number;
+        longitude: number;
+        is_verified: boolean;
         capacity: number;
         current_occupancy: number;
         occupancy_percentage: number;
@@ -24,12 +29,30 @@ const props = defineProps<{
     selectedZoneId?: number | null;
 }>();
 
+const { coords } = useGeolocation();
+
+/*
+ * Las distancias se calculan en el dispositivo: la ubicación del usuario no se
+ * envía al servidor para ordenar esta lista.
+ */
+const zones = computed(() => {
+    const position = coords.value;
+    const items = props.zones.map((zone) => ({
+        ...zone,
+        distance_km: position ? distanceKm(position, zone) : null,
+    }));
+
+    return position
+        ? items.sort((a, b) => (a.distance_km ?? 0) - (b.distance_km ?? 0))
+        : items;
+});
+
 const selectedZone = computed(() => {
     if (!props.selectedZoneId) {
-        return props.zones[0] ?? null;
+        return zones.value[0] ?? null;
     }
 
-    return props.zones.find((zone) => zone.id === props.selectedZoneId) ?? props.zones[0] ?? null;
+    return zones.value.find((zone) => zone.id === props.selectedZoneId) ?? zones.value[0] ?? null;
 });
 
 const serviceIcons: Record<string, any> = {
@@ -65,6 +88,8 @@ const statusStyles: Record<string, string> = {
             </div>
         </section>
 
+        <LocationPanel purpose="Activa tu ubicación para ordenar las zonas seguras por cercanía. Se usa solo en este dispositivo." />
+
         <section class="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
             <div class="space-y-4">
                 <div
@@ -76,6 +101,8 @@ const statusStyles: Record<string, string> = {
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                             <h2 class="text-xl font-bold text-slate-900 dark:text-white">{{ zone.name }}</h2>
+                            <p v-if="zone.distance_km !== null" class="mt-1 text-sm font-semibold text-emerald-700 dark:text-emerald-300">A {{ zone.distance_km.toFixed(1) }} km en línea recta</p>
+                            <p v-if="!zone.is_verified" class="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">Información no verificada por RESGUARDA</p>
                             <div class="mt-1 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                                 <MapPin class="h-4 w-4" />
                                 <span>{{ zone.address }}</span>
@@ -195,10 +222,16 @@ const statusStyles: Record<string, string> = {
                     </div>
 
                     <div class="mt-4">
-                        <button class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-700">
-                            <MapPin class="h-4 w-4" />
+                        <a
+                            :href="directionsUrl(selectedZone.latitude, selectedZone.longitude)"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-700"
+                        >
+                            <Navigation class="h-4 w-4" />
                             Cómo llegar
-                        </button>
+                        </a>
+                        <p class="mt-2 text-center text-[11px] text-slate-500 dark:text-slate-400">Abre Google Maps con el destino; tu ubicación no se envía desde RESGUARDA.</p>
                     </div>
                 </div>
 

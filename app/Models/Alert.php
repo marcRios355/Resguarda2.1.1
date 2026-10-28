@@ -32,11 +32,13 @@ class Alert extends Model
         'expires_at' => 'datetime',
     ];
 
+    /** @return BelongsTo<User, $this> */
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** @return BelongsTo<District, $this> */
     public function district(): BelongsTo
     {
         return $this->belongsTo(District::class);

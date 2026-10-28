@@ -40,6 +40,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
     'reliability_level',
     'reputation_score',
     'status',
+    'notify_all_community_messages',
+    'show_message_previews',
 ])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
@@ -59,6 +61,8 @@ class User extends Authenticatable implements PasskeyUser
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
             'reputation_score' => 'integer',
+            'notify_all_community_messages' => 'boolean',
+            'show_message_previews' => 'boolean',
         ];
     }
 

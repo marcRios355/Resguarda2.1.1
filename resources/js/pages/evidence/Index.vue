@@ -3,6 +3,7 @@ import { Head, usePage } from '@inertiajs/vue3';
 import { AlertTriangle, Camera, CheckCircle2, MapPin, ShieldAlert, XCircle } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import { store } from '@/actions/App/Http/Controllers/CitizenEvidenceController';
+import { useGeolocation } from '@/composables/useGeolocation';
 
 const page = usePage();
 const csrfToken = computed(() => page.props.csrf_token ?? '');
@@ -47,15 +48,30 @@ const reportReason = ref('false_information');
 
 const selectedDistrict = computed(() => props.districts.find((district) => district.id === selectedDistrictId.value));
 
-const requestLocation = () => {
-    if (!navigator.geolocation) {
+const { statusMessage, isLocating, locate, lookupDistrict } = useGeolocation();
+const locationNote = ref('');
+
+const requestLocation = async () => {
+    const position = await locate({ force: true });
+
+    if (!position) {
+        locationNote.value = statusMessage.value;
+
         return;
     }
 
-    navigator.geolocation.getCurrentPosition((position) => {
-        latitude.value = String(position.coords.latitude);
-        longitude.value = String(position.coords.longitude);
-    });
+    latitude.value = String(position.latitude);
+    longitude.value = String(position.longitude);
+    const result = await lookupDistrict();
+
+    if (result?.district) {
+        selectedDistrictId.value = result.district.id;
+        locationNote.value = result.approximate
+            ? `Ubicación añadida. Distrito sugerido: ${result.district.name} (aproximado, confírmalo).`
+            : `Ubicación añadida en el distrito ${result.district.name}.`;
+    } else {
+        locationNote.value = 'Ubicación añadida. Parece estar fuera de Trujillo: elige el distrito manualmente.';
+    }
 };
 
 const severityClass: Record<string, string> = {
@@ -164,11 +180,12 @@ const statusClass: Record<string, string> = {
                     Ubicación y referencia
                     <div class="mt-2 flex flex-col gap-2 sm:flex-row">
                         <input name="address_reference" maxlength="255" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900" placeholder="Calle, avenida o punto cercano" />
-                        <button type="button" @click="requestLocation" class="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">
+                        <button type="button" :disabled="isLocating" @click="requestLocation" class="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700 disabled:opacity-60 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">
                             <MapPin class="h-4 w-4" />
-                            Usar mi ubicación
+                            {{ isLocating ? 'Ubicando…' : 'Usar mi ubicación' }}
                         </button>
                     </div>
+                    <span v-if="locationNote" class="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400" role="status">{{ locationNote }}</span>
                 </label>
 
                 <label class="text-sm font-medium text-slate-700 dark:text-slate-200 md:col-span-2">

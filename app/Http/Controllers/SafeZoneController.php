@@ -44,11 +44,6 @@ class SafeZoneController extends Controller
 
         return Inertia::render('safe-zones/Index', [
             'zones' => $zones,
-            'demoMode' => true,
-            'userLocation' => [
-                'latitude' => -8.11599,
-                'longitude' => -79.02998,
-            ],
             'status' => $request->session()->get('status'),
         ]);
     }
@@ -81,12 +76,7 @@ class SafeZoneController extends Controller
                     'distance_km' => null,
                 ],
             ],
-            'demoMode' => true,
             'selectedZoneId' => $safeZone->id,
-            'userLocation' => [
-                'latitude' => -8.11599,
-                'longitude' => -79.02998,
-            ],
         ]);
     }
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import NotificationBell from '@/components/navigation/NotificationBell.vue';
 import TopEmergencyBar from '@/components/navigation/TopEmergencyBar.vue';
 import type { BreadcrumbItem } from '@/types';
 
@@ -27,6 +28,9 @@ withDefaults(
             </template>
         </div>
 
-        <TopEmergencyBar />
+        <div class="flex items-center gap-2">
+            <NotificationBell />
+            <TopEmergencyBar />
+        </div>
     </header>
 </template>

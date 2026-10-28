@@ -11,7 +11,7 @@ import { Head, Link } from '@inertiajs/vue3';
             RESGUARDA.
         </p>
         <Link
-            href="/dashboard"
+            href="/map"
             class="text-foreground underline decoration-neutral-300 underline-offset-4"
         >
             Ir a la aplicación

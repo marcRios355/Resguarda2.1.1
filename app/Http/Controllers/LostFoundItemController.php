@@ -3,15 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\LostFoundItem;
+use App\Models\PrivateMessage;
+use App\Services\PrivateImageStorage;
+use App\Services\PrivateMessenger;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -20,6 +22,8 @@ class LostFoundItemController extends Controller
     private const TYPES = ['lost', 'found'];
 
     private const STATUSES = ['open', 'resolved'];
+
+    public function __construct(private PrivateImageStorage $images) {}
 
     public function index(Request $request): Response
     {
@@ -73,8 +77,33 @@ class LostFoundItemController extends Controller
 
     public function show(Request $request, LostFoundItem $lostFoundItem): Response
     {
+        $userId = $request->user()->id;
+        $isOwner = $lostFoundItem->user_id === $userId;
+
+        // Conversaciones iniciadas desde esta publicación: el dueño ve todas, el
+        // resto solo la suya.
+        $contacts = PrivateMessage::query()
+            ->where('lost_found_item_id', $lostFoundItem->id)
+            ->when(! $isOwner, fn (Builder $query) => $query->where(fn (Builder $query) => $query->where('sender_id', $userId)->orWhere('recipient_id', $userId)))
+            ->with(['sender:id,name', 'recipient:id,name'])
+            ->latest()
+            ->get()
+            ->unique('conversation_id')
+            ->map(function (PrivateMessage $message) use ($userId): array {
+                $other = $message->sender_id === $userId ? $message->recipient : $message->sender;
+
+                return [
+                    'conversation_id' => $message->conversation_id,
+                    'other_user_name' => $other?->name,
+                    'last_contact_at' => $message->created_at?->format('Y-m-d H:i'),
+                ];
+            })
+            ->values()
+            ->all();
+
         return Inertia::render('lost-found/Show', [
-            'item' => $this->publicItemData($lostFoundItem, $request->user()->id),
+            'item' => $this->publicItemData($lostFoundItem, $userId),
+            'contacts' => $contacts,
             'categories' => LostFoundItem::CATEGORIES,
             'types' => [
                 'lost' => 'Perdido',
@@ -89,16 +118,42 @@ class LostFoundItemController extends Controller
 
     public function photo(LostFoundItem $lostFoundItem): StreamedResponse
     {
-        $photoPath = $lostFoundItem->photo_path;
-        abort_if($photoPath === null, 404);
+        return $this->images->response($lostFoundItem->photo_path);
+    }
 
-        $disk = Storage::disk('local');
-        abort_unless($disk->exists($photoPath), 404);
+    /**
+     * Abre (o continúa) una conversación privada entre quien encontró o
+     * reconoce el objeto y la persona que lo publicó.
+     */
+    public function contact(Request $request, LostFoundItem $lostFoundItem, PrivateMessenger $messenger): RedirectResponse
+    {
+        $user = $request->user();
+        abort_if($lostFoundItem->user_id === $user->id, 403);
 
-        return $disk->response($photoPath, null, [
-            'Cache-Control' => 'private, no-store, max-age=0',
-            'X-Content-Type-Options' => 'nosniff',
-        ], 'inline');
+        if ($lostFoundItem->status !== 'open') {
+            throw ValidationException::withMessages([
+                'message' => 'Esta publicación ya fue marcada como resuelta.',
+            ]);
+        }
+
+        $validated = $request->validate(PrivateMessenger::rules(), PrivateMessenger::ruleMessages());
+
+        $conversation = $messenger->conversationBetween($user->id, $lostFoundItem->user_id);
+        $messenger->send(
+            $user,
+            $conversation,
+            $lostFoundItem->user_id,
+            $validated['message'] ?? null,
+            $request->file('photo'),
+            $lostFoundItem->id,
+        );
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Mensaje enviado a quien publicó el aviso.',
+        ]);
+
+        return redirect()->route('communication.conversations.show', $conversation);
     }
 
     public function update(Request $request, LostFoundItem $lostFoundItem): RedirectResponse
@@ -184,209 +239,12 @@ class LostFoundItemController extends Controller
             return null;
         }
 
-        $path = $request->file('photo')->store('lost-found', 'local');
-
-        if ($path === false) {
-            throw new RuntimeException('No fue posible guardar la fotografía de la publicación.');
-        }
-
-        try {
-            $this->stripImageMetadata($path);
-        } catch (Throwable $exception) {
-            $this->deletePhoto($path);
-
-            throw $exception;
-        }
-
-        return $path;
-    }
-
-    private function stripImageMetadata(string $path): void
-    {
-        $disk = Storage::disk('local');
-        $contents = $disk->get($path);
-
-        $sanitized = match ($disk->mimeType($path)) {
-            'image/jpeg' => $this->stripJpegMetadata($contents),
-            'image/png' => $this->stripPngMetadata($contents),
-            'image/webp' => $this->stripWebpMetadata($contents),
-            default => throw new RuntimeException('El formato de la fotografía no está permitido.'),
-        };
-
-        if (! $disk->put($path, $sanitized)) {
-            throw new RuntimeException('No fue posible proteger los metadatos de la fotografía.');
-        }
-    }
-
-    private function stripJpegMetadata(string $image): string
-    {
-        if (! str_starts_with($image, "\xFF\xD8")) {
-            throw new RuntimeException('La fotografía JPEG no tiene un formato válido.');
-        }
-
-        $sanitized = substr($image, 0, 2);
-        $length = strlen($image);
-        $offset = 2;
-
-        while ($offset < $length) {
-            if (ord($image[$offset]) !== 0xFF) {
-                throw new RuntimeException('La fotografía JPEG no tiene un formato válido.');
-            }
-
-            $segmentStart = $offset;
-
-            while ($offset < $length && ord($image[$offset]) === 0xFF) {
-                $offset++;
-            }
-
-            if ($offset >= $length) {
-                throw new RuntimeException('La fotografía JPEG está incompleta.');
-            }
-
-            $marker = ord($image[$offset++]);
-
-            if ($marker === 0xDA || $marker === 0xD9) {
-                return $sanitized.substr($image, $segmentStart);
-            }
-
-            if ($marker === 0x00) {
-                throw new RuntimeException('La fotografía JPEG no tiene un formato válido.');
-            }
-
-            if ($marker === 0x01 || ($marker >= 0xD0 && $marker <= 0xD7)) {
-                $sanitized .= substr($image, $segmentStart, $offset - $segmentStart);
-
-                continue;
-            }
-
-            if ($offset + 2 > $length) {
-                throw new RuntimeException('La fotografía JPEG está incompleta.');
-            }
-
-            $segmentLength = $this->unpackLength('n', substr($image, $offset, 2));
-            $segmentEnd = $offset + $segmentLength;
-
-            if ($segmentLength < 2 || $segmentEnd > $length) {
-                throw new RuntimeException('La fotografía JPEG está incompleta.');
-            }
-
-            if (! in_array($marker, [0xE1, 0xED, 0xFE], true)) {
-                $sanitized .= substr($image, $segmentStart, $segmentEnd - $segmentStart);
-            }
-
-            $offset = $segmentEnd;
-        }
-
-        throw new RuntimeException('La fotografía JPEG está incompleta.');
-    }
-
-    private function stripPngMetadata(string $image): string
-    {
-        $signature = "\x89PNG\r\n\x1A\n";
-
-        if (! str_starts_with($image, $signature)) {
-            throw new RuntimeException('La fotografía PNG no tiene un formato válido.');
-        }
-
-        $sanitized = $signature;
-        $length = strlen($image);
-        $offset = strlen($signature);
-        $hasEndChunk = false;
-
-        while ($offset + 12 <= $length) {
-            $chunkStart = $offset;
-            $chunkLength = $this->unpackLength('N', substr($image, $offset, 4));
-            $chunkEnd = $offset + 12 + $chunkLength;
-
-            if ($chunkEnd > $length) {
-                throw new RuntimeException('La fotografía PNG está incompleta.');
-            }
-
-            $chunkType = substr($image, $offset + 4, 4);
-
-            if ((ord($chunkType[0]) & 0x20) === 0 || in_array($chunkType, ['tRNS', 'sRGB', 'gAMA', 'cHRM', 'sBIT', 'bKGD'], true)) {
-                $sanitized .= substr($image, $chunkStart, $chunkEnd - $chunkStart);
-            }
-
-            $offset = $chunkEnd;
-
-            if ($chunkType === 'IEND') {
-                $hasEndChunk = true;
-                break;
-            }
-        }
-
-        if (! $hasEndChunk) {
-            throw new RuntimeException('La fotografía PNG está incompleta.');
-        }
-
-        return $sanitized;
-    }
-
-    private function stripWebpMetadata(string $image): string
-    {
-        if (! str_starts_with($image, 'RIFF') || substr($image, 8, 4) !== 'WEBP') {
-            throw new RuntimeException('La fotografía WebP no tiene un formato válido.');
-        }
-
-        $chunks = '';
-        $length = strlen($image);
-        $offset = 12;
-
-        while ($offset + 8 <= $length) {
-            $chunkStart = $offset;
-            $chunkType = substr($image, $offset, 4);
-            $chunkLength = $this->unpackLength('V', substr($image, $offset + 4, 4));
-            $chunkEnd = $offset + 8 + $chunkLength + ($chunkLength % 2);
-
-            if ($chunkEnd > $length) {
-                throw new RuntimeException('La fotografía WebP está incompleta.');
-            }
-
-            if (! in_array($chunkType, ['EXIF', 'XMP ', 'ICCP'], true)) {
-                $chunk = substr($image, $chunkStart, $chunkEnd - $chunkStart);
-
-                if ($chunkType === 'VP8X' && $chunkLength >= 10) {
-                    $chunk[8] = chr(ord($chunk[8]) & ~0x2C);
-                }
-
-                $chunks .= $chunk;
-            }
-
-            $offset = $chunkEnd;
-        }
-
-        if ($offset !== $length) {
-            throw new RuntimeException('La fotografía WebP está incompleta.');
-        }
-
-        $body = 'WEBP'.$chunks;
-
-        return 'RIFF'.pack('V', strlen($body)).$body;
-    }
-
-    private function unpackLength(string $format, string $bytes): int
-    {
-        $unpacked = unpack($format, $bytes);
-
-        if ($unpacked === false || ! isset($unpacked[1]) || ! is_int($unpacked[1])) {
-            throw new RuntimeException('La fotografía tiene una estructura no válida.');
-        }
-
-        return $unpacked[1];
+        return $this->images->store($request->file('photo'), 'lost-found');
     }
 
     private function deletePhoto(?string $path): void
     {
-        if ($path === null) {
-            return;
-        }
-
-        $disk = Storage::disk('local');
-
-        if ($disk->exists($path) && ! $disk->delete($path)) {
-            throw new RuntimeException('No fue posible retirar una fotografía reemplazada o eliminada.');
-        }
+        $this->images->delete($path);
     }
 
     private function authorizeOwner(Request $request, LostFoundItem $item): void

@@ -8,22 +8,31 @@ use App\Http\Controllers\CommunicationCenterController;
 use App\Http\Controllers\CommunityChatController;
 use App\Http\Controllers\DistrictRiskController;
 use App\Http\Controllers\DistrictZoneController;
+use App\Http\Controllers\LocationController;
 use App\Http\Controllers\LostFoundItemController;
 use App\Http\Controllers\MapController;
 use App\Http\Controllers\NeedHelpRequestController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PrivateChatController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ResguardaModeController;
 use App\Http\Controllers\SafeZoneController;
 use App\Http\Controllers\SosAlertController;
 use App\Http\Controllers\SosDeliveryReviewController;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::inertia('/', 'Welcome')->name('home');
+Route::get('/', fn (Request $request): RedirectResponse => redirect()->route($request->user() ? 'map' : 'login'))
+    ->name('home');
 
 Route::middleware(['auth'])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    // El mapa es la pantalla principal; se conserva /dashboard para enlaces antiguos.
+    Route::redirect('dashboard', '/map')->name('dashboard');
     Route::get('map', [MapController::class, 'index'])->name('map');
+    Route::get('location/lookup', [LocationController::class, 'lookup'])
+        ->middleware('throttle:60,1')
+        ->name('location.lookup');
     Route::get('safe-zones', [SafeZoneController::class, 'index'])->name('safe-zones.index');
     Route::get('safe-zones/{safeZone}', [SafeZoneController::class, 'show'])->name('safe-zones.show');
 
@@ -41,6 +50,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('lost-found', [LostFoundItemController::class, 'store'])->name('lost-found.store');
     Route::get('lost-found/{lostFoundItem}', [LostFoundItemController::class, 'show'])->name('lost-found.show');
     Route::get('lost-found/{lostFoundItem}/photo', [LostFoundItemController::class, 'photo'])->name('lost-found.photo');
+    Route::post('lost-found/{lostFoundItem}/contact', [LostFoundItemController::class, 'contact'])
+        ->middleware('throttle:20,1')
+        ->name('lost-found.contact');
     Route::put('lost-found/{lostFoundItem}', [LostFoundItemController::class, 'update'])->name('lost-found.update');
     Route::delete('lost-found/{lostFoundItem}', [LostFoundItemController::class, 'destroy'])->name('lost-found.destroy');
 
@@ -65,7 +77,15 @@ Route::middleware(['auth'])->group(function () {
     Route::post('communication/conversations/{conversation}', [PrivateChatController::class, 'reply'])->name('communication.conversations.reply');
 
     Route::get('chat', [CommunityChatController::class, 'index'])->name('chat.index');
-    Route::post('chat', [CommunityChatController::class, 'store'])->name('chat.store');
+    Route::post('chat', [CommunityChatController::class, 'store'])->middleware('throttle:30,1')->name('chat.store');
+    Route::get('chat/messages/{communityMessage}/photo', [CommunityChatController::class, 'photo'])->name('chat.photo');
+    Route::get('communication/messages/{privateMessage}/photo', [PrivateChatController::class, 'photo'])->name('communication.messages.photo');
+
+    Route::get('notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('notifications/summary', [NotificationController::class, 'summary'])->name('notifications.summary');
+    Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+    Route::patch('notifications/preferences', [NotificationController::class, 'updatePreferences'])->name('notifications.preferences');
+    Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->name('notifications.read');
 
     Route::get('private-chat', [PrivateChatController::class, 'index'])->name('private-chat.index');
     Route::post('private-chat', [PrivateChatController::class, 'store'])->name('private-chat.store');
@@ -74,10 +94,13 @@ Route::middleware(['auth'])->group(function () {
     Route::get('resguarda-mode', [ResguardaModeController::class, 'mode'])->name('resguarda-mode');
     Route::get('emergency', [ResguardaModeController::class, 'emergency'])->name('emergency');
 
-    Route::inertia('assistant', 'assistant/Index')->name('assistant.index');
+    Route::get('assistant', [AssistantController::class, 'index'])->name('assistant.index');
     Route::post('assistant/chat', [AssistantController::class, 'reply'])
         ->middleware('throttle:assistant')
         ->name('assistant.chat');
+    Route::post('assistant/stream', [AssistantController::class, 'stream'])
+        ->middleware('throttle:assistant')
+        ->name('assistant.stream');
 
     Route::get('admin', [AdminController::class, 'index'])->name('admin.index');
     Route::get('admin/users', [AdminController::class, 'users'])->name('admin.users');

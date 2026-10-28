@@ -17,7 +17,7 @@ test('users without a verified email can access authenticated application pages'
     $user = User::factory()->unverified()->create();
 
     $this->actingAs($user)
-        ->get(route('dashboard'))
+        ->get(route('map'))
         ->assertOk();
 
     $this->get(route('need-help.index'))->assertOk();

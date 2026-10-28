@@ -19,7 +19,7 @@ test('users can authenticate using the login screen', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect(route('map', absolute: false));
 });
 
 test('users can authenticate without a verified email address', function () {
@@ -33,8 +33,8 @@ test('users can authenticate without a verified email address', function () {
     ]);
 
     $this->assertAuthenticatedAs($user);
-    $response->assertRedirect(route('dashboard', absolute: false));
-    $this->get(route('dashboard'))->assertOk();
+    $response->assertRedirect(route('map', absolute: false));
+    $this->get(route('map'))->assertOk();
     $this->get(route('need-help.index'))->assertOk();
 });
 

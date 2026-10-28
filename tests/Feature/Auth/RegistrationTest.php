@@ -29,11 +29,11 @@ test('new users can register', function () {
     ]);
 
     $this->assertAuthenticated();
-    $response->assertRedirect(route('dashboard', absolute: false));
+    $response->assertRedirect(route('map', absolute: false));
     $user = User::where('email', 'test@example.com')->firstOrFail();
     expect($user->email_verified_at)->toBeNull();
     Notification::assertNotSentTo($user, VerifyEmail::class);
 
-    $this->get(route('dashboard'))->assertOk();
+    $this->get(route('map'))->assertOk();
     $this->get(route('need-help.index'))->assertOk();
 });

@@ -39,6 +39,13 @@ return [
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
         'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+        // Ruta opcional a un bundle de certificados CA (cacert.pem) para entornos
+        // como XAMPP en Windows donde PHP no tiene `curl.cainfo` configurado.
+        'ca_bundle' => env('GEMINI_CA_BUNDLE'),
+        // Modelos que se prueban, en orden, si el principal está saturado o no responde.
+        'fallback_models' => env('GEMINI_FALLBACK_MODELS', 'gemini-3.5-flash-lite,gemini-flash-lite-latest'),
+        // MINIMAL es el más rápido; los modelos que no lo admiten se reintentan con LOW.
+        'thinking_level' => env('GEMINI_THINKING_LEVEL', 'MINIMAL'),
     ],
 
 ];

@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\District;
 use App\Models\Report;
 use App\Models\ReportConfirmation;
+use App\Services\DistrictLocator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -57,18 +59,28 @@ class ReportController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, DistrictLocator $locator): RedirectResponse
     {
         $validated = $request->validate([
             'district_id' => ['required', 'exists:districts,id'],
             'incident_type' => ['required', 'string'],
             'title' => ['required', 'string', 'max:150'],
             'description' => ['required', 'string', 'max:1000'],
-            'latitude' => ['required', 'numeric'],
-            'longitude' => ['required', 'numeric'],
+            'latitude' => ['required', 'numeric', 'between:-90,90'],
+            'longitude' => ['required', 'numeric', 'between:-180,180'],
             'address_reference' => ['nullable', 'string', 'max:255'],
             'severity' => ['required', 'in:baja,media,alta,critica'],
         ]);
+
+        $location = $locator->locate((float) $validated['latitude'], (float) $validated['longitude']);
+
+        // Solo se bloquea cuando los límites distritales confirman otro distrito;
+        // una estimación por cercanía no basta para rechazar la elección del usuario.
+        if ($location['method'] === 'boundary' && $location['district']?->id !== (int) $validated['district_id']) {
+            throw ValidationException::withMessages([
+                'district_id' => 'La ubicación indicada pertenece al distrito '.$location['district']?->name.'. Corrige el distrito del reporte.',
+            ]);
+        }
 
         $report = Report::create([
             'user_id' => $request->user()->id,

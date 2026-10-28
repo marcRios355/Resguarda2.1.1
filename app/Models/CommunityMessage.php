@@ -15,6 +15,7 @@ class CommunityMessage extends Model
     protected $fillable = [
         'user_id',
         'district_id',
+        'reply_to_id',
         'message',
         'attachment_path',
         'is_reported',
@@ -38,5 +39,11 @@ class CommunityMessage extends Model
     public function district(): BelongsTo
     {
         return $this->belongsTo(District::class);
+    }
+
+    /** @return BelongsTo<CommunityMessage, $this> */
+    public function replyTo(): BelongsTo
+    {
+        return $this->belongsTo(CommunityMessage::class, 'reply_to_id');
     }
 }

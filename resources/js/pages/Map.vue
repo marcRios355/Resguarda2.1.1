@@ -1,17 +1,14 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { Bell, LocateFixed, MapPinned } from '@lucide/vue';
+import { Bell, LoaderCircle, LocateFixed, MapPinned, Navigation, ShieldCheck } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { dashboard } from '@/routes';
+import { directionsUrl, distanceKm, useGeolocation } from '@/composables/useGeolocation';
 
 defineOptions({
     layout: {
-        breadcrumbs: [
-            { title: 'Dashboard', href: dashboard() },
-            { title: 'Mapa de Riesgo', href: '/map' },
-        ],
+        breadcrumbs: [{ title: 'Mapa de Riesgo', href: '/map' }],
     },
 });
 
@@ -30,13 +27,112 @@ type District = {
     help: number;
 };
 
+type SafeZone = {
+    id: number;
+    name: string;
+    address: string;
+    district_id: number;
+    district_name: string | null;
+    latitude: number;
+    longitude: number;
+    status: string;
+    status_label: string;
+    status_color: string;
+    is_verified: boolean;
+};
+
+type ActiveAlert = {
+    id: number;
+    title: string;
+    message: string;
+    severity: 'info' | 'caution' | 'danger' | 'critical';
+    district_id: number | null;
+    district_name: string | null;
+};
+
 const props = defineProps<{
     districts: District[];
+    safeZones: SafeZone[];
+    activeAlerts: ActiveAlert[];
 }>();
+
+const geolocation = useGeolocation();
+const { coords, lookup, isLocating, preferredDistrictId } = geolocation;
+const safeZoneLayer = shallowRef<L.LayerGroup | null>(null);
+
+const escapeHtml = (value: string | null | undefined) =>
+    String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
+
+const currentDistrictId = computed(() => lookup.value?.district?.id ?? preferredDistrictId.value ?? null);
+const currentDistrictName = computed(() => props.districts.find((district) => district.id === currentDistrictId.value)?.name ?? null);
+
+const nearbyZones = computed(() => {
+    const position = coords.value;
+
+    if (!position) {
+        return [];
+    }
+
+    return (props.safeZones ?? [])
+        .map((zone) => ({ ...zone, distance: distanceKm(position, zone) }))
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 5);
+});
+
+const relevantAlerts = computed(() => {
+    const alerts = props.activeAlerts ?? [];
+
+    if (!currentDistrictId.value) {
+        return alerts;
+    }
+
+    return alerts.filter((alert) => alert.district_id === null || alert.district_id === currentDistrictId.value);
+});
+
+const severityStyles: Record<ActiveAlert['severity'], { box: string; label: string }> = {
+    info: { box: 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/80 dark:bg-sky-950/40 dark:text-sky-200', label: 'Informativa' },
+    caution: { box: 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/80 dark:bg-amber-950/40 dark:text-amber-200', label: 'Precaución' },
+    danger: { box: 'border-orange-200 bg-orange-50 text-orange-800 dark:border-orange-900/80 dark:bg-orange-950/40 dark:text-orange-200', label: 'Peligro' },
+    critical: { box: 'border-red-200 bg-red-50 text-red-800 dark:border-red-900/80 dark:bg-red-950/40 dark:text-red-200', label: 'Crítica' },
+};
+
+const renderSafeZones = () => {
+    const map = mapInstance.value;
+
+    if (!map) {
+        return;
+    }
+
+    safeZoneLayer.value?.remove();
+    const layer = L.layerGroup();
+
+    (props.safeZones ?? []).forEach((zone) => {
+        L.marker([zone.latitude, zone.longitude], {
+            icon: L.divIcon({
+                className: 'custom-marker',
+                html: `<span style="background:${escapeHtml(zone.status_color)}; border:2px solid white; width:14px; height:14px; display:block; border-radius:4px; box-shadow:0 0 0 3px rgba(16,185,129,.35)"></span>`,
+                iconSize: [14, 14],
+                iconAnchor: [7, 7],
+            }),
+        })
+            .bindPopup(`
+                <div style="min-width:180px;">
+                    <strong>${escapeHtml(zone.name)}</strong><br>
+                    <small>${escapeHtml(zone.address)}</small><br>
+                    <small>${escapeHtml(zone.status_label)}${zone.is_verified ? ' · Verificada' : ' · No verificada'}</small><br>
+                    <a href="${directionsUrl(zone.latitude, zone.longitude)}" target="_blank" rel="noopener noreferrer">Cómo llegar</a>
+                </div>
+            `)
+            .addTo(layer);
+    });
+
+    layer.addTo(map);
+    safeZoneLayer.value = layer;
+};
 
 const districts = computed(() => props.districts ?? []);
 const mapContainer = ref<HTMLElement | null>(null);
-const statusMessage = ref('Solicitando ubicación…');
+const statusMessage = ref('Cargando mapa…');
 const mapInstance = shallowRef<L.Map | null>(null);
 const tileLayer = shallowRef<L.TileLayer | null>(null);
 const districtLayer = shallowRef<L.LayerGroup | null>(null);
@@ -113,9 +209,9 @@ const renderDistrictMarkers = () => {
 
         marker.bindPopup(`
             <div style="min-width:180px;">
-                <strong>${district.name}</strong><br>
+                <strong>${escapeHtml(district.name)}</strong><br>
                 <span style="color:${style.color}; font-weight:600;">${style.label}</span><br>
-                <small>${district.summary}</small><br>
+                <small>${escapeHtml(district.summary)}</small><br>
                 <small>Alertas: ${district.alerts} · Evidencias: ${district.evidence} · Ayuda: ${district.help}</small>
             </div>
         `);
@@ -134,43 +230,48 @@ const renderDistrictMarkers = () => {
     layer.addTo(map);
 };
 
-const requestUserLocation = () => {
-    if (!navigator.geolocation) {
-        statusMessage.value = 'Geolocalización no disponible en este navegador.';
+const showUserOnMap = (latitude: number, longitude: number, fly = true) => {
+    if (fly) {
+        mapInstance.value?.flyTo([latitude, longitude], 14, { duration: 1.5 });
+    }
+
+    userMarker.value = L.circleMarker([latitude, longitude], {
+        radius: 10,
+        color: '#0f172a',
+        weight: 2,
+        fillColor: '#22c55e',
+        fillOpacity: 0.9,
+    }).bindPopup('Tu ubicación actual');
+
+    renderDistrictMarkers();
+};
+
+const describeLookup = () => {
+    const result = lookup.value;
+
+    if (!result) {
+        statusMessage.value = 'Ubicación actual detectada.';
+    } else if (!result.district) {
+        statusMessage.value = 'Tu ubicación parece estar fuera de la provincia de Trujillo.';
+    } else {
+        statusMessage.value = result.approximate
+            ? `Ubicación detectada. Distrito aproximado: ${result.district.name}.`
+            : `Ubicación detectada en el distrito ${result.district.name}.`;
+    }
+};
+
+const requestUserLocation = async () => {
+    const position = await geolocation.locate({ force: true });
+
+    if (!position) {
+        statusMessage.value = `${geolocation.statusMessage.value} Puedes seguir usando el mapa con la vista general.`;
+
         return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-
-            statusMessage.value = 'Ubicación actual detectada.';
-
-            if (mapInstance.value) {
-                mapInstance.value.flyTo([lat, lng], 13, { duration: 1.5 });
-            }
-
-            if (userMarker.value) {
-                mapInstance.value?.removeLayer(userMarker.value);
-            }
-
-            userMarker.value = L.circleMarker([lat, lng], {
-                radius: 10,
-                color: '#0f172a',
-                weight: 2,
-                fillColor: '#22c55e',
-                fillOpacity: 0.9,
-            });
-
-            renderDistrictMarkers();
-        },
-        () => {
-            statusMessage.value = 'Permiso denegado. Puedes seguir usando el mapa con la vista por defecto.';
-            renderDistrictMarkers();
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
-    );
+    showUserOnMap(position.latitude, position.longitude);
+    await geolocation.lookupDistrict();
+    describeLookup();
 };
 
 const focusOnTrujillo = () => {
@@ -182,7 +283,7 @@ watch(filters, () => {
     renderDistrictMarkers();
 }, { deep: true });
 
-onMounted(() => {
+onMounted(async () => {
     if (!mapContainer.value) return;
 
     const map = L.map(mapContainer.value, {
@@ -196,7 +297,21 @@ onMounted(() => {
     }).addTo(map);
 
     renderDistrictMarkers();
-    requestUserLocation();
+    renderSafeZones();
+
+    // Solo se ubica automáticamente si el permiso ya fue concedido; en otro caso
+    // se espera a que el usuario pulse "Mi ubicación".
+    const position = await geolocation.locateIfPermitted();
+
+    if (position) {
+        showUserOnMap(position.latitude, position.longitude);
+        await geolocation.lookupDistrict();
+        describeLookup();
+    } else {
+        statusMessage.value = geolocation.status.value === 'denied'
+            ? 'Permiso de ubicación denegado. Puedes usar el mapa y elegir tu distrito manualmente.'
+            : 'Pulsa "Mi ubicación" para ver tu posición y las zonas seguras cercanas.';
+    }
 });
 
 onBeforeUnmount(() => {
@@ -221,10 +336,12 @@ onBeforeUnmount(() => {
 
                     <div class="flex items-center gap-2">
                         <button
+                            :disabled="isLocating"
                             @click="requestUserLocation"
-                            class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-900/70"
+                            class="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-60 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-900/70"
                         >
-                            <LocateFixed class="h-4 w-4" />
+                            <LoaderCircle v-if="isLocating" class="h-4 w-4 animate-spin" />
+                            <LocateFixed v-else class="h-4 w-4" />
                             Mi ubicación
                         </button>
                         <button
@@ -237,11 +354,11 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div class="mb-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-700 dark:border-sky-900/80 dark:bg-sky-950/40 dark:text-sky-300">
+                <div role="status" aria-live="polite" class="mb-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-700 dark:border-sky-900/80 dark:bg-sky-950/40 dark:text-sky-300">
                     {{ statusMessage }}
                 </div>
 
-                <div ref="mapContainer" class="h-[520px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 dark:border-slate-800" />
+                <div ref="mapContainer" class="h-[420px] w-full sm:h-[520px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 dark:border-slate-800" />
             </div>
 
             <aside class="space-y-4">
@@ -295,23 +412,41 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
-                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Alertas cercanas</p>
-                    <div class="mt-4 space-y-3">
-                        <div class="rounded-xl border border-red-200 bg-red-50 p-3 dark:border-red-900/80 dark:bg-red-950/40">
-                            <div class="flex items-center justify-between gap-3">
-                                <strong class="text-sm text-red-700 dark:text-red-300">Inundación</strong>
-                                <span class="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-700 dark:bg-red-900/50 dark:text-red-300">Alta</span>
+                    <div class="flex items-center gap-2">
+                        <ShieldCheck class="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Zonas seguras cercanas</p>
+                    </div>
+                    <div v-if="nearbyZones.length" class="mt-4 space-y-2">
+                        <div v-for="zone in nearbyZones" :key="zone.id" class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                            <div class="flex items-start justify-between gap-2">
+                                <strong class="text-sm text-slate-800 dark:text-slate-100">{{ zone.name }}</strong>
+                                <span class="shrink-0 text-xs font-semibold text-emerald-700 dark:text-emerald-300">{{ zone.distance.toFixed(1) }} km</span>
                             </div>
-                            <p class="mt-1 text-xs text-red-700/80 dark:text-red-200/80">Calle principal con tránsito restringido cerca de Trujillo Centro.</p>
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ zone.address }} · {{ zone.status_label }}{{ zone.is_verified ? '' : ' · No verificada' }}</p>
+                            <a :href="directionsUrl(zone.latitude, zone.longitude)" target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-sky-700 hover:underline dark:text-sky-300">
+                                <Navigation class="h-3.5 w-3.5" /> Cómo llegar
+                            </a>
                         </div>
-                        <div class="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/80 dark:bg-amber-950/40">
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">Distancias en línea recta. Verifica el estado del lugar con las autoridades antes de desplazarte.</p>
+                    </div>
+                    <p v-else-if="coords" class="mt-4 text-sm text-slate-500 dark:text-slate-400">No hay zonas seguras registradas en RESGUARDA.</p>
+                    <p v-else class="mt-4 text-sm text-slate-500 dark:text-slate-400">Activa tu ubicación para ver las zonas seguras más cercanas.</p>
+                </div>
+
+                <div class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+                    <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                        Alertas activas{{ currentDistrictName ? ` · ${currentDistrictName}` : '' }}
+                    </p>
+                    <div v-if="relevantAlerts.length" class="mt-4 space-y-3">
+                        <div v-for="alert in relevantAlerts" :key="alert.id" class="rounded-xl border p-3" :class="severityStyles[alert.severity]?.box ?? severityStyles.caution.box">
                             <div class="flex items-center justify-between gap-3">
-                                <strong class="text-sm text-amber-700 dark:text-amber-300">Lluvias</strong>
-                                <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Media</span>
+                                <strong class="text-sm">{{ alert.title }}</strong>
+                                <span class="rounded-full bg-white/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide dark:bg-black/20">{{ severityStyles[alert.severity]?.label ?? alert.severity }}</span>
                             </div>
-                            <p class="mt-1 text-xs text-amber-700/80 dark:text-amber-200/80">Huanchaco y zonas de baja elevación con riesgo de acumulación.</p>
+                            <p class="mt-1 text-xs opacity-80">{{ alert.district_name ?? 'Toda la provincia' }} · {{ alert.message }}</p>
                         </div>
                     </div>
+                    <p v-else class="mt-4 text-sm text-slate-500 dark:text-slate-400">No hay alertas activas registradas{{ currentDistrictName ? ` para ${currentDistrictName}` : '' }}.</p>
                 </div>
 
                 <div class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">

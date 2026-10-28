@@ -2,11 +2,11 @@
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import {
-    LayoutGrid,
     Map,
     ShieldCheck,
     AlertTriangle,
     Bell,
+    BellRing,
     MessagesSquare,
     ShieldAlert,
     SlidersHorizontal,
@@ -29,7 +29,6 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard } from '@/routes';
 import type { NavItem } from '@/types';
 
 const page = usePage();
@@ -37,11 +36,6 @@ const user = computed(() => page.props.auth?.user);
 
 const mainNavItems = computed<NavItem[]>(() => {
     const items: NavItem[] = [
-        {
-            title: 'Dashboard General',
-            href: dashboard(),
-            icon: LayoutGrid,
-        },
         {
             title: 'Mapa de Riesgo',
             href: '/map',
@@ -83,6 +77,11 @@ const mainNavItems = computed<NavItem[]>(() => {
             icon: MessagesSquare,
         },
         {
+            title: 'Notificaciones',
+            href: '/notifications',
+            icon: BellRing,
+        },
+        {
             title: 'Modo RESGUARDA',
             href: '/resguarda-mode',
             icon: ShieldAlert,
@@ -120,7 +119,7 @@ const emergencyNavItems: NavItem[] = [
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton size="lg" as-child>
-                        <Link :href="dashboard()">
+                        <Link href="/map">
                             <AppLogo />
                         </Link>
                     </SidebarMenuButton>

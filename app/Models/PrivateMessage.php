@@ -16,7 +16,9 @@ class PrivateMessage extends Model
         'conversation_id',
         'sender_id',
         'recipient_id',
+        'lost_found_item_id',
         'message',
+        'attachment_path',
         'read_at',
     ];
 
@@ -34,6 +36,12 @@ class PrivateMessage extends Model
     public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sender_id');
+    }
+
+    /** @return BelongsTo<LostFoundItem, $this> */
+    public function lostFoundItem(): BelongsTo
+    {
+        return $this->belongsTo(LostFoundItem::class);
     }
 
     /** @return BelongsTo<User, $this> */

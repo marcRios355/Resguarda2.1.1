@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import { useNotificationSummary } from '@/composables/useNotificationSummary';
 import {
-    Home,
     Map,
     AlertTriangle,
     MessageSquare,
@@ -13,14 +13,9 @@ import {
 
 const page = usePage();
 const currentUrl = computed(() => page.url);
+const { unreadPrivateMessages } = useNotificationSummary();
 
 const navItems = [
-    {
-        name: 'Inicio',
-        href: '/dashboard',
-        icon: Home,
-        active: computed(() => currentUrl.value === '/dashboard'),
-    },
     {
         name: 'Mapa',
         href: '/map',
@@ -31,13 +26,13 @@ const navItems = [
         name: 'Alertas',
         href: '/alerts',
         icon: AlertTriangle,
-        badge: 0,
         active: computed(() => currentUrl.value.startsWith('/alerts')),
     },
     {
         name: 'Comunicación',
         href: '/communication',
         icon: MessageSquare,
+        badge: unreadPrivateMessages,
         active: computed(
             () =>
                 currentUrl.value.startsWith('/communication') ||
@@ -76,7 +71,7 @@ const navItems = [
         aria-label="Navegación principal"
         class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg transition-transform md:hidden dark:border-slate-800 dark:bg-slate-950/95"
     >
-        <div class="mx-auto grid h-16 max-w-lg grid-cols-7 items-center px-1">
+        <div class="mx-auto grid h-16 max-w-lg grid-cols-6 items-center px-1">
             <Link
                 v-for="item in navItems"
                 :key="item.name"
@@ -95,10 +90,10 @@ const navItems = [
                         :class="[item.active.value ? 'scale-110' : '']"
                     />
                     <span
-                        v-if="item.badge && item.badge > 0"
+                        v-if="item.badge && item.badge.value > 0"
                         class="py-0.2 absolute -top-1 -right-2 rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-950"
                     >
-                        {{ item.badge }}
+                        {{ item.badge.value > 99 ? '99+' : item.badge.value }}
                     </span>
                 </div>
                 <span class="mt-1 text-[11px] tracking-tight">{{

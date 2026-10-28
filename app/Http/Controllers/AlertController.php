@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Alert;
+use App\Models\District;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,6 +15,7 @@ class AlertController extends Controller
     {
         $alerts = Alert::with('district', 'creator')
             ->where('is_active', true)
+            ->where(fn ($query) => $query->whereNull('expires_at')->orWhere('expires_at', '>', now()))
             ->latest()
             ->get()
             ->map(fn (Alert $alert) => [
@@ -22,6 +24,7 @@ class AlertController extends Controller
                 'message' => $alert->message,
                 'type' => $alert->type,
                 'severity' => $alert->severity,
+                'district_id' => $alert->district_id,
                 'district_name' => $alert->district?->name,
                 'created_by' => $alert->creator?->name,
                 'latitude' => (float) $alert->latitude,
@@ -34,6 +37,7 @@ class AlertController extends Controller
 
         return Inertia::render('alerts/Index', [
             'alerts' => $alerts,
+            'districts' => District::query()->orderBy('name')->get(['id', 'name']),
         ]);
     }
 

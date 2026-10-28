@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { AlertTriangle, BellRing, ShieldAlert } from '@lucide/vue';
+import { computed, ref } from 'vue';
+import LocationPanel from '@/components/LocationPanel.vue';
+import { useGeolocation } from '@/composables/useGeolocation';
 
 const props = defineProps<{
     alerts: Array<{
@@ -9,6 +12,7 @@ const props = defineProps<{
         message: string;
         type: string;
         severity: string;
+        district_id: number | null;
         district_name: string | null;
         created_by: string | null;
         latitude: number | null;
@@ -16,7 +20,25 @@ const props = defineProps<{
         radius_meters: number | null;
         expires_at: string | null;
     }>;
+    districts: Array<{ id: number; name: string }>;
 }>();
+
+const { lookup, preferredDistrictId } = useGeolocation();
+const districtFilter = ref<string>('');
+const myDistrictId = computed(() => lookup.value?.district?.id ?? preferredDistrictId.value ?? null);
+
+/*
+ * Las alertas sin distrito aplican a toda la provincia y se muestran siempre.
+ */
+const visibleAlerts = computed(() => {
+    if (!districtFilter.value) {
+        return props.alerts;
+    }
+
+    const districtId = districtFilter.value === 'mine' ? myDistrictId.value : Number(districtFilter.value);
+
+    return props.alerts.filter((alert) => alert.district_id === null || alert.district_id === districtId);
+});
 
 const severityClasses: Record<string, string> = {
     info: 'bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300',
@@ -43,9 +65,21 @@ const severityClasses: Record<string, string> = {
             </div>
         </section>
 
+        <LocationPanel :districts="props.districts" purpose="Activa tu ubicación o elige tu distrito para ver las alertas que te afectan." />
+
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label for="alert-district-filter" class="text-sm font-medium text-slate-700 dark:text-slate-200">Mostrar alertas de</label>
+            <select id="alert-district-filter" v-model="districtFilter" class="min-h-10 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900">
+                <option value="">Toda la provincia</option>
+                <option v-if="myDistrictId" value="mine">Mi distrito</option>
+                <option v-for="district in props.districts" :key="district.id" :value="String(district.id)">{{ district.name }}</option>
+            </select>
+        </div>
+
         <section class="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
             <div class="space-y-4">
-                <div v-for="alert in props.alerts" :key="alert.id" class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
+                <p v-if="visibleAlerts.length === 0" class="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">No hay alertas activas registradas para este filtro.</p>
+                <div v-for="alert in visibleAlerts" :key="alert.id" class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
                     <div class="flex items-start justify-between gap-3">
                         <div>
                             <h2 class="text-xl font-bold text-slate-900 dark:text-white">{{ alert.title }}</h2>

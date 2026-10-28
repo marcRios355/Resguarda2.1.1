@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Head, usePage } from '@inertiajs/vue3';
-import { AlertTriangle, CheckCircle2, ShieldAlert, XCircle } from '@lucide/vue';
+import { AlertTriangle, CheckCircle2, LoaderCircle, LocateFixed, ShieldAlert, XCircle } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import { useGeolocation } from '@/composables/useGeolocation';
 
 const page = usePage();
 const csrfToken = computed(() => page.props.csrf_token ?? '');
@@ -37,8 +38,49 @@ const props = defineProps<{
 
 const selectedDistrictId = ref<number | ''>(props.selected_district_id ?? props.districts[0]?.id ?? '');
 const selectedDistrict = computed(() => props.districts.find((district) => district.id === selectedDistrictId.value));
-const latitude = computed(() => selectedDistrict.value?.latitude ?? -8.1116);
-const longitude = computed(() => selectedDistrict.value?.longitude ?? -79.0287);
+const { coords, statusMessage, isLocating, locate, lookupDistrict } = useGeolocation();
+const useExactLocation = ref(false);
+const locationNote = ref('');
+
+/*
+ * Sin ubicación exacta se mantiene el comportamiento anterior: el reporte se
+ * asocia al centro del distrito elegido.
+ */
+const latitude = computed(() =>
+    useExactLocation.value && coords.value ? coords.value.latitude : (selectedDistrict.value?.latitude ?? -8.1116),
+);
+const longitude = computed(() =>
+    useExactLocation.value && coords.value ? coords.value.longitude : (selectedDistrict.value?.longitude ?? -79.0287),
+);
+
+const useMyLocation = async () => {
+    locationNote.value = '';
+    const position = await locate({ force: true });
+
+    if (!position) {
+        useExactLocation.value = false;
+        locationNote.value = statusMessage.value;
+
+        return;
+    }
+
+    useExactLocation.value = true;
+    const result = await lookupDistrict();
+
+    if (result?.district) {
+        selectedDistrictId.value = result.district.id;
+        locationNote.value = result.approximate
+            ? `Ubicación registrada. Distrito sugerido: ${result.district.name} (aproximado, confírmalo).`
+            : `Ubicación registrada en el distrito ${result.district.name}.`;
+    } else {
+        locationNote.value = 'Ubicación registrada, pero parece estar fuera de la provincia de Trujillo. Elige el distrito manualmente.';
+    }
+};
+
+const clearExactLocation = () => {
+    useExactLocation.value = false;
+    locationNote.value = '';
+};
 
 
 const statusClasses: Record<string, string> = {
@@ -90,6 +132,20 @@ const severityClasses: Record<string, string> = {
                         <option v-for="district in props.districts" :key="district.id" :value="district.id">{{ district.name }}</option>
                     </select>
                 </label>
+                <div class="text-sm md:row-span-1">
+                    <p class="font-medium text-slate-700 dark:text-slate-200">Ubicación del incidente</p>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <button type="button" class="inline-flex min-h-10 items-center gap-2 rounded-xl border border-orange-300 bg-white px-3 py-2 font-semibold text-orange-700 hover:bg-orange-50 disabled:opacity-60 dark:border-orange-800 dark:bg-slate-900 dark:text-orange-300" :disabled="isLocating" @click="useMyLocation">
+                            <LoaderCircle v-if="isLocating" class="h-4 w-4 animate-spin" />
+                            <LocateFixed v-else class="h-4 w-4" />
+                            {{ useExactLocation ? 'Actualizar ubicación' : 'Usar mi ubicación actual' }}
+                        </button>
+                        <button v-if="useExactLocation" type="button" class="text-xs font-medium text-slate-600 underline dark:text-slate-300" @click="clearExactLocation">Usar el centro del distrito</button>
+                    </div>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" role="status">
+                        {{ locationNote || 'Opcional. Si no la usas, el reporte se ubicará en el centro del distrito elegido.' }}
+                    </p>
+                </div>
                 <label class="text-sm font-medium text-slate-700 dark:text-slate-200">
                     Tipo de incidente
                     <select name="incident_type" required class="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900">

@@ -8,6 +8,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property int|null $unread_count Mensajes sin leer del usuario actual (via withCount).
+ */
 class Conversation extends Model
 {
     /** @use HasFactory<Factory<Conversation>> */
@@ -39,6 +42,11 @@ class Conversation extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(PrivateMessage::class);
+    }
+
+    public function hasParticipant(int $userId): bool
+    {
+        return in_array($userId, [$this->user_one_id, $this->user_two_id], true);
     }
 
     public function otherUser(int $currentUserId): User
