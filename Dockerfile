@@ -24,6 +24,8 @@ RUN npm run build
 
 FROM php:8.4-apache-bookworm AS production
 
+RUN printf 'file_uploads=On\nupload_max_filesize=12M\npost_max_size=16M\nmemory_limit=256M\n' > /usr/local/etc/php/conf.d/uploads.ini
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev libzip-dev libicu-dev libcurl4-openssl-dev \
     && docker-php-ext-install pdo_pgsql bcmath intl zip curl \
