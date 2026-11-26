@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SafeZone extends Model
 {
@@ -12,6 +13,7 @@ class SafeZone extends Model
 
     protected $fillable = [
         'district_id',
+        'user_id',
         'name',
         'address',
         'latitude',
@@ -38,6 +40,18 @@ class SafeZone extends Model
     public function district(): BelongsTo
     {
         return $this->belongsTo(District::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /** @return HasMany<SafeZoneVote, $this> */
+    public function votes(): HasMany
+    {
+        return $this->hasMany(SafeZoneVote::class);
     }
 
     public function getOccupancyPercentageAttribute(): int

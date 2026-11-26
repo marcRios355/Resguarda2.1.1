@@ -9,12 +9,12 @@ use App\Services\PrivateMessenger;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as ImageResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class LostFoundItemController extends Controller
@@ -116,7 +116,7 @@ class LostFoundItemController extends Controller
         ]);
     }
 
-    public function photo(LostFoundItem $lostFoundItem): StreamedResponse
+    public function photo(LostFoundItem $lostFoundItem): ImageResponse
     {
         return $this->images->response($lostFoundItem->photo_path);
     }

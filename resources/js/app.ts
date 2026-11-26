@@ -11,6 +11,9 @@ void createInertiaApp({
     title: (title) => (title ? `${title} - ${appName}` : appName),
     layout: (name) => {
         switch (true) {
+            // La bienvenida ocupa toda la pantalla, sin barra lateral.
+            case name === 'Welcome':
+                return null;
             case name.startsWith('auth/'):
                 return AuthLayout;
             case name.startsWith('settings/'):

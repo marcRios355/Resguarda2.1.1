@@ -4,6 +4,7 @@ use App\Models\CommunityMessage;
 use App\Models\Conversation;
 use App\Models\PrivateMessage;
 use App\Models\User;
+use App\Services\PrivateImageStorage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -42,7 +43,7 @@ test('users can publish a community photo with text and metadata is removed', fu
 
     $message = CommunityMessage::query()->sole();
     expect($message->attachment_path)->not->toBeNull()
-        ->and(Storage::disk('local')->get($message->attachment_path))->not->toContain('GPS');
+        ->and(app(PrivateImageStorage::class)->contents($message->attachment_path))->not->toContain('GPS');
 
     $this->actingAs($reader)
         ->get(route('communication.index', ['tab' => 'community']))

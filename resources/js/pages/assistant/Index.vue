@@ -2,19 +2,16 @@
 import { Head } from '@inertiajs/vue3';
 import {
     Bot,
-    Camera,
+    ImagePlus,
     LoaderCircle,
     MapPin,
     RotateCcw,
     Send,
-    ShieldAlert,
-    Sparkles,
+    SquarePen,
     Trash2,
     X,
 } from '@lucide/vue';
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
-import LocationPanel from '@/components/LocationPanel.vue';
-import { Button } from '@/components/ui/button';
 import { useGeolocation } from '@/composables/useGeolocation';
 
 type Mode = 'general' | 'first_aid' | 'infrastructure' | 'objects';
@@ -35,7 +32,7 @@ const props = defineProps<{
 
 const IMAGE_ONLY_LABEL = 'He adjuntado una imagen para analizar.';
 
-const mode = ref<Mode>('general');
+const mode: Mode = 'general';
 const prompt = ref('');
 const image = ref<File | null>(null);
 const imagePreview = ref<string | null>(null);
@@ -49,34 +46,10 @@ let nextMessageId = 1;
 
 const { coords, preferredDistrictId, locate } = useGeolocation();
 
-const modes: Array<{ id: Mode; label: string; description: string }> = [
-    {
-        id: 'general',
-        label: 'Emergencias y RESGUARDA',
-        description: 'Prevención, distritos, refugios y alertas',
-    },
-    {
-        id: 'first_aid',
-        label: 'Primeros auxilios',
-        description: 'Orientación básica y señales de alarma',
-    },
-    {
-        id: 'infrastructure',
-        label: 'Infraestructura',
-        description: 'Observaciones de daños visibles',
-    },
-    {
-        id: 'objects',
-        label: 'Objetos',
-        description: 'Identificación posible y usos',
-    },
-];
-
 const suggestions = [
-    '¿Cuál es la zona segura registrada más cercana a mí?',
-    '¿Hay alertas activas en mi distrito?',
-    '¿Qué debo hacer durante un sismo?',
-    '¿Cómo preparo una mochila de emergencia?',
+    '¿Zona segura más cercana?',
+    '¿Hay alertas en mi distrito?',
+    '¿Qué hago en un sismo?',
 ];
 
 const districtName = computed(
@@ -163,7 +136,7 @@ const request = async (message: ChatMessage, attempt = 0): Promise<void> => {
         .slice(-12);
 
     const form = new FormData();
-    form.append('mode', message.mode ?? mode.value);
+    form.append('mode', message.mode ?? mode);
     form.append('prompt', message.imageOnly ? '' : message.content);
     history.forEach((item, index) => {
         form.append(`messages[${index}][role]`, item.role);
@@ -337,7 +310,7 @@ const send = async (text?: string) => {
         imageOnly: !question,
         state: 'pending',
         image: image.value,
-        mode: mode.value,
+        mode,
     });
     prompt.value = '';
     releasePreview();
@@ -361,6 +334,26 @@ const discard = (message: ChatMessage) => {
     messages.value = messages.value.filter((item) => item.id !== message.id);
 };
 
+/**
+ * Activa o desactiva el uso de la ubicación. Al activarla se solicita el
+ * permiso; si se deniega, la opción vuelve a desactivarse.
+ */
+const toggleLocation = async () => {
+    if (useLocation.value) {
+        useLocation.value = false;
+
+        return;
+    }
+
+    useLocation.value = true;
+    const position = coords.value ?? (await locate({ force: true }));
+
+    if (!position) {
+        useLocation.value = false;
+        notice.value = 'No se pudo obtener tu ubicación.';
+    }
+};
+
 const resetConversation = () => {
     messages.value = [];
     notice.value = '';
@@ -370,236 +363,172 @@ onBeforeUnmount(releasePreview);
 </script>
 
 <template>
-    <Head title="Asistente inteligente" />
+    <Head title="Asistente" />
 
     <main
-        class="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-5 p-3 pb-24 sm:p-6"
+        class="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-3xl min-w-0 flex-col p-2 sm:p-4"
     >
-        <header
-            class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950"
+        <section
+            class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950"
         >
-            <div class="flex items-start gap-3">
-                <div
-                    class="rounded-xl bg-emerald-100 p-2 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
-                >
-                    <Sparkles class="size-6" />
-                </div>
-                <div class="min-w-0">
-                    <h1
-                        class="text-2xl font-bold text-slate-900 dark:text-slate-100"
+            <header
+                class="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800"
+            >
+                <div class="flex min-w-0 items-center gap-2">
+                    <div
+                        class="rounded-full bg-emerald-100 p-1.5 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
                     >
-                        Asistente inteligente
-                    </h1>
-                    <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                        Pregunta sobre prevención, emergencias, los 12 distritos
-                        de Trujillo y las zonas seguras registradas en
-                        RESGUARDA. Las consultas y fotografías se envían a
-                        Google Gemini para su análisis y no se guardan en
-                        RESGUARDA.
+                        <Bot class="size-5" />
+                    </div>
+                    <div class="min-w-0">
+                        <h1
+                            class="text-sm font-semibold text-slate-900 dark:text-slate-100"
+                        >
+                            Asistente RESGUARDA
+                        </h1>
+                        <p
+                            class="truncate text-xs text-slate-500 dark:text-slate-400"
+                        >
+                            {{
+                                useLocation && districtName
+                                    ? `Cerca de ${districtName}`
+                                    : 'En línea'
+                            }}
+                        </p>
+                    </div>
+                </div>
+                <button
+                    v-if="messages.length"
+                    type="button"
+                    class="rounded-full p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-900"
+                    :disabled="loading"
+                    aria-label="Nueva conversación"
+                    title="Nueva conversación"
+                    @click="resetConversation"
+                >
+                    <SquarePen class="size-5" />
+                </button>
+            </header>
+
+            <div
+                ref="conversation"
+                class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4"
+                aria-live="polite"
+            >
+                <div
+                    v-if="messages.length === 0"
+                    class="m-auto flex flex-col items-center gap-3 text-center"
+                >
+                    <p class="text-sm text-slate-500 dark:text-slate-400">
+                        Hola, ¿en qué te ayudo?
                     </p>
+                    <div class="flex flex-wrap justify-center gap-2">
+                        <button
+                            v-for="suggestion in suggestions"
+                            :key="suggestion"
+                            type="button"
+                            class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
+                            :disabled="loading"
+                            @click="send(suggestion)"
+                        >
+                            {{ suggestion }}
+                        </button>
+                    </div>
                 </div>
-            </div>
-        </header>
 
-        <section
-            class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
-            aria-label="Tipo de consulta"
-        >
-            <button
-                v-for="item in modes"
-                :key="item.id"
-                type="button"
-                class="rounded-xl border p-4 text-left transition"
-                :class="
-                    mode === item.id
-                        ? 'border-emerald-600 bg-emerald-50 dark:border-emerald-500 dark:bg-emerald-950/40'
-                        : 'border-slate-200 bg-white hover:border-slate-400 dark:border-slate-800 dark:bg-slate-950'
-                "
-                :aria-pressed="mode === item.id"
-                @click="mode = item.id"
-            >
-                <span
-                    class="font-semibold text-slate-900 dark:text-slate-100"
-                    >{{ item.label }}</span
+                <div
+                    v-for="message in messages"
+                    v-show="message.content"
+                    :key="message.id"
+                    class="flex flex-col gap-1"
+                    :class="
+                        message.role === 'user' ? 'items-end' : 'items-start'
+                    "
                 >
-                <span
-                    class="mt-1 block text-sm text-slate-600 dark:text-slate-300"
-                    >{{ item.description }}</span
-                >
-            </button>
-        </section>
-
-        <div class="space-y-2">
-            <label
-                class="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-950"
-            >
-                <input
-                    v-model="useLocation"
-                    type="checkbox"
-                    class="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600"
-                />
-                <span>
-                    <span class="font-medium text-slate-800 dark:text-slate-100"
-                        >Usar mi ubicación para respuestas cercanas</span
+                    <div
+                        class="max-w-[85%] rounded-2xl px-3.5 py-2 text-sm break-words whitespace-pre-wrap"
+                        :class="[
+                            message.role === 'user'
+                                ? 'rounded-br-sm bg-emerald-600 text-white'
+                                : 'rounded-bl-sm bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100',
+                            message.state === 'pending' ? 'opacity-70' : '',
+                            message.state === 'failed'
+                                ? 'ring-2 ring-red-400'
+                                : '',
+                        ]"
                     >
+                        {{ message.content }}
+                    </div>
+                    <div
+                        v-if="message.state === 'failed'"
+                        class="flex max-w-[85%] flex-wrap items-center justify-end gap-2 text-xs text-red-700 dark:text-red-300"
+                        role="alert"
+                    >
+                        <span>{{ message.error }}</span>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 font-semibold hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:hover:bg-red-950/40"
+                            :disabled="loading"
+                            @click="retry(message)"
+                        >
+                            <RotateCcw class="h-3 w-3" /> Reintentar
+                        </button>
+                        <button
+                            type="button"
+                            class="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-red-50 dark:hover:bg-red-950/40"
+                            aria-label="Descartar mensaje"
+                            @click="discard(message)"
+                        >
+                            <Trash2 class="h-3 w-3" />
+                        </button>
+                    </div>
+                </div>
+
+                <div
+                    v-if="loading && !receivingAnswer"
+                    class="flex w-fit items-center gap-1 rounded-2xl rounded-bl-sm bg-slate-100 px-3.5 py-3 dark:bg-slate-900"
+                    role="status"
+                    aria-label="Escribiendo"
+                >
                     <span
-                        class="block text-xs text-slate-500 dark:text-slate-400"
-                        >Solo se envía al servidor cuando preguntas; a la IA
-                        únicamente se le comunica tu distrito y las distancias a
-                        los lugares registrados, nunca tus coordenadas.</span
-                    >
-                </span>
-            </label>
-            <LocationPanel
-                v-if="useLocation"
-                :districts="props.districts"
-                :auto-locate="true"
-            />
-            <p
-                v-else-if="districtName"
-                class="flex items-center gap-1 px-1 text-xs text-slate-500 dark:text-slate-400"
-            >
-                <MapPin class="h-3.5 w-3.5" /> Las respuestas considerarán el
-                distrito {{ districtName }}.
-            </p>
-        </div>
-
-        <section
-            ref="conversation"
-            class="flex max-h-[60vh] min-h-64 flex-col gap-4 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-950"
-            aria-live="polite"
-        >
-            <div
-                v-if="messages.length === 0"
-                class="m-auto max-w-lg py-8 text-center"
-            >
-                <Bot
-                    class="mx-auto size-10 text-emerald-600 dark:text-emerald-400"
-                />
-                <p class="mt-3 font-medium text-slate-800 dark:text-slate-200">
-                    ¿En qué puedo orientarte?
-                </p>
-                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Puedes hacer preguntas adicionales para continuar la
-                    conversación.
-                </p>
-                <div class="mt-4 flex flex-wrap justify-center gap-2">
-                    <button
-                        v-for="suggestion in suggestions"
-                        :key="suggestion"
-                        type="button"
-                        class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200"
-                        :disabled="loading"
-                        @click="
-                            mode = 'general';
-                            send(suggestion);
-                        "
-                    >
-                        {{ suggestion }}
-                    </button>
+                        class="size-1.5 animate-bounce rounded-full bg-slate-400"
+                    />
+                    <span
+                        class="size-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:150ms]"
+                    />
+                    <span
+                        class="size-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:300ms]"
+                    />
                 </div>
-            </div>
-
-            <div
-                v-for="message in messages"
-                v-show="message.content"
-                :key="message.id"
-                class="flex flex-col gap-1"
-                :class="message.role === 'user' ? 'items-end' : 'items-start'"
-            >
-                <div
-                    class="max-w-[90%] rounded-2xl px-4 py-3 text-sm break-words whitespace-pre-wrap sm:max-w-[80%]"
-                    :class="[
-                        message.role === 'user'
-                            ? 'bg-emerald-600 text-white'
-                            : 'bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-100',
-                        message.state === 'pending' ? 'opacity-70' : '',
-                        message.state === 'failed' ? 'ring-2 ring-red-400' : '',
-                    ]"
+                <p
+                    v-if="notice"
+                    class="mx-auto text-center text-xs text-amber-700 dark:text-amber-300"
                 >
-                    {{ message.content }}
-                </div>
-                <div
-                    v-if="message.state === 'failed'"
-                    class="flex max-w-[90%] flex-wrap items-center justify-end gap-2 text-xs text-red-700 sm:max-w-[80%] dark:text-red-300"
-                    role="alert"
-                >
-                    <span>{{ message.error }}</span>
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md border border-red-300 px-2 py-1 font-semibold hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:hover:bg-red-950/40"
-                        :disabled="loading"
-                        @click="retry(message)"
-                    >
-                        <RotateCcw class="h-3 w-3" /> Reintentar
-                    </button>
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-red-50 dark:hover:bg-red-950/40"
-                        aria-label="Descartar mensaje"
-                        @click="discard(message)"
-                    >
-                        <Trash2 class="h-3 w-3" />
-                    </button>
-                </div>
+                    {{ notice }}
+                </p>
             </div>
 
-            <div
-                v-if="loading && !receivingAnswer"
-                class="flex items-center gap-2 text-sm text-slate-500"
-                role="status"
+            <form
+                class="border-t border-slate-200 p-2 dark:border-slate-800"
+                @submit.prevent="send()"
             >
-                <LoaderCircle class="size-4 animate-spin" /> Analizando la
-                consulta…
-            </div>
-            <p
-                v-if="notice"
-                class="rounded-lg bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
-            >
-                <ShieldAlert class="mr-1 inline size-4" />{{ notice }}
-            </p>
-        </section>
-
-        <form
-            class="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-800 dark:bg-slate-950"
-            @submit.prevent="send()"
-        >
-            <label class="sr-only" for="assistant-prompt">Tu pregunta</label>
-            <textarea
-                id="assistant-prompt"
-                v-model="prompt"
-                rows="3"
-                maxlength="4000"
-                class="w-full resize-y rounded-xl border border-slate-300 bg-transparent p-3 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 dark:border-slate-700"
-                placeholder="Escribe tu pregunta…"
-                @keydown.enter.exact.prevent="send()"
-            />
-            <div
-                v-if="image"
-                class="flex items-center justify-between gap-3 rounded-lg bg-slate-100 px-3 py-2 text-sm dark:bg-slate-900"
-            >
-                <div class="flex min-w-0 items-center gap-3">
+                <div v-if="image" class="mb-2 flex items-center gap-2 px-1">
                     <img
                         v-if="imagePreview"
                         :src="imagePreview"
-                        alt="Vista previa de la imagen adjunta"
-                        class="h-12 w-12 shrink-0 rounded-md object-cover"
+                        alt="Imagen adjunta"
+                        class="h-12 w-12 rounded-lg object-cover"
                     />
-                    <span class="min-w-0 truncate">{{ image.name }}</span>
+                    <button
+                        type="button"
+                        class="rounded-full p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-900"
+                        aria-label="Quitar imagen"
+                        @click="clearImage"
+                    >
+                        <X class="size-4" />
+                    </button>
                 </div>
-                <button
-                    type="button"
-                    class="rounded p-1"
-                    aria-label="Quitar imagen"
-                    @click="clearImage"
-                >
-                    <X class="size-4" />
-                </button>
-            </div>
-            <div
-                class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-            >
-                <div class="flex flex-wrap gap-2">
+                <div class="flex items-end gap-1">
                     <input
                         ref="fileInput"
                         type="file"
@@ -607,45 +536,66 @@ onBeforeUnmount(releasePreview);
                         class="sr-only"
                         @change="selectImage"
                     />
-                    <Button
+                    <button
                         type="button"
-                        variant="outline"
+                        class="rounded-full p-2.5 text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-900"
                         :disabled="loading"
+                        aria-label="Adjuntar foto"
+                        title="Adjuntar foto"
                         @click="fileInput?.click()"
                     >
-                        <Camera class="mr-2 size-4" /> Adjuntar fotografía
-                    </Button>
-                    <Button
-                        v-if="messages.length"
+                        <ImagePlus class="size-5" />
+                    </button>
+                    <button
                         type="button"
-                        variant="ghost"
-                        :disabled="loading"
-                        @click="resetConversation"
+                        class="rounded-full p-2.5 hover:bg-slate-100 dark:hover:bg-slate-900"
+                        :class="
+                            useLocation
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-slate-500'
+                        "
+                        :aria-pressed="useLocation"
+                        :title="
+                            useLocation
+                                ? 'Ubicación activada'
+                                : 'Usar mi ubicación'
+                        "
+                        aria-label="Usar mi ubicación"
+                        @click="toggleLocation"
                     >
-                        Nueva conversación
-                    </Button>
-                </div>
-                <Button
-                    type="submit"
-                    :disabled="loading || (!prompt.trim() && !image)"
-                >
-                    <LoaderCircle
-                        v-if="loading"
-                        class="mr-2 size-4 animate-spin"
+                        <MapPin class="size-5" />
+                    </button>
+                    <label class="sr-only" for="assistant-prompt"
+                        >Mensaje</label
+                    >
+                    <textarea
+                        id="assistant-prompt"
+                        v-model="prompt"
+                        rows="1"
+                        maxlength="4000"
+                        class="max-h-32 min-h-10 flex-1 resize-none rounded-2xl border border-slate-300 bg-transparent px-3.5 py-2 text-sm outline-none focus:border-emerald-600 dark:border-slate-700"
+                        placeholder="Escribe un mensaje…"
+                        @keydown.enter.exact.prevent="send()"
                     />
-                    <Send v-else class="mr-2 size-4" />
-                    Enviar consulta
-                </Button>
-            </div>
-            <p
-                class="text-xs leading-relaxed text-slate-500 dark:text-slate-400"
-            >
-                La IA puede equivocarse y solo conoce los refugios y alertas
-                registrados en RESGUARDA. No ofrece diagnósticos ni certifica
-                estructuras; ante peligro inmediato llama al 105 (Policía), 116
-                (Bomberos) o 106 (SAMU), o usa el botón SOS. Evita incluir
-                rostros o documentos personales en las fotos.
-            </p>
-        </form>
+                    <button
+                        type="submit"
+                        class="rounded-full bg-emerald-600 p-2.5 text-white hover:bg-emerald-700 disabled:opacity-50"
+                        :disabled="loading || (!prompt.trim() && !image)"
+                        aria-label="Enviar"
+                    >
+                        <LoaderCircle
+                            v-if="loading"
+                            class="size-5 animate-spin"
+                        />
+                        <Send v-else class="size-5" />
+                    </button>
+                </div>
+                <p
+                    class="mt-1 text-center text-[11px] text-slate-400 dark:text-slate-500"
+                >
+                    Emergencias: 105 · 116 · 106
+                </p>
+            </form>
+        </section>
     </main>
 </template>

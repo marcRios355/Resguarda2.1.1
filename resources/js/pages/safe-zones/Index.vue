@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
-import { MapPin, Navigation, ShieldCheck, Users, Wifi, Droplets, HeartPulse, Building2 } from '@lucide/vue';
-import { computed } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { MapPin, Navigation, ShieldCheck, ShieldPlus, ThumbsDown, ThumbsUp, Users, Wifi, Droplets, HeartPulse, Building2, X } from '@lucide/vue';
+import { computed, ref } from 'vue';
 import LocationPanel from '@/components/LocationPanel.vue';
+import SafeZoneForm from '@/components/SafeZoneForm.vue';
 import { directionsUrl, distanceKm, useGeolocation } from '@/composables/useGeolocation';
 
 const props = defineProps<{
@@ -23,11 +24,38 @@ const props = defineProps<{
         services: string[];
         image_path: string | null;
         notes: string | null;
+        published_by: string | null;
+        reliable_votes: number;
+        unreliable_votes: number;
+        my_vote: 'reliable' | 'unreliable' | null;
         updated_at: string | null;
         distance_km: number | null;
     }>;
+    districts: Array<{ id: number; name: string; latitude: number; longitude: number }>;
     selectedZoneId?: number | null;
 }>();
+
+const showForm = ref(false);
+const voting = ref(false);
+
+const vote = (zoneId: number, value: 'reliable' | 'unreliable') => {
+    router.post(`/safe-zones/${zoneId}/vote`, { vote: value }, {
+        preserveScroll: true,
+        onStart: () => (voting.value = true),
+        onFinish: () => (voting.value = false),
+    });
+};
+
+const serviceLabels: Record<string, string> = {
+    agua: 'Agua',
+    luz: 'Luz',
+    banos: 'Baños',
+    baños: 'Baños',
+    primeros_auxilios: 'Primeros auxilios',
+    alimentos: 'Alimentos',
+    internet: 'Internet',
+    seguridad: 'Seguridad',
+};
 
 const { coords } = useGeolocation();
 
@@ -60,6 +88,7 @@ const serviceIcons: Record<string, any> = {
     luz: Wifi,
     primeros_auxilios: HeartPulse,
     baños: Building2,
+    banos: Building2,
 };
 
 const statusStyles: Record<string, string> = {
@@ -81,12 +110,26 @@ const statusStyles: Record<string, string> = {
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">Refugios y puntos de resguardo</p>
                     <h1 class="mt-2 text-2xl font-bold text-slate-900 dark:text-white">Zonas Seguras</h1>
                 </div>
-                <div class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/50 dark:text-emerald-300">
-                    <ShieldCheck class="h-3.5 w-3.5" />
-                    {{ zones.length }} zonas registradas
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/50 dark:text-emerald-300">
+                        <ShieldCheck class="h-3.5 w-3.5" />
+                        {{ zones.length }} zonas registradas
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition"
+                        :class="showForm ? 'border border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200' : 'bg-emerald-600 text-white hover:bg-emerald-700'"
+                        @click="showForm = !showForm"
+                    >
+                        <X v-if="showForm" class="h-4 w-4" />
+                        <ShieldPlus v-else class="h-4 w-4" />
+                        {{ showForm ? 'Cerrar' : 'Publicar zona segura' }}
+                    </button>
                 </div>
             </div>
         </section>
+
+        <SafeZoneForm v-if="showForm" :districts="props.districts ?? []" @published="showForm = false" />
 
         <LocationPanel purpose="Activa tu ubicación para ordenar las zonas seguras por cercanía. Se usa solo en este dispositivo." />
 
@@ -102,7 +145,9 @@ const statusStyles: Record<string, string> = {
                         <div>
                             <h2 class="text-xl font-bold text-slate-900 dark:text-white">{{ zone.name }}</h2>
                             <p v-if="zone.distance_km !== null" class="mt-1 text-sm font-semibold text-emerald-700 dark:text-emerald-300">A {{ zone.distance_km.toFixed(1) }} km en línea recta</p>
-                            <p v-if="!zone.is_verified" class="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">Información no verificada por RESGUARDA</p>
+                            <p v-if="!zone.is_verified" class="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                                {{ zone.published_by ? `Publicada por ${zone.published_by} · ` : '' }}Información no verificada por RESGUARDA
+                            </p>
                             <div class="mt-1 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                                 <MapPin class="h-4 w-4" />
                                 <span>{{ zone.address }}</span>
@@ -149,7 +194,7 @@ const statusStyles: Record<string, string> = {
                                 class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                             >
                                 <component :is="serviceIcons[service] || ShieldCheck" class="h-3 w-3" />
-                                {{ service }}
+                                {{ serviceLabels[service] ?? service }}
                             </span>
                         </template>
                         <span v-else class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
@@ -212,8 +257,44 @@ const statusStyles: Record<string, string> = {
                     <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/80">
                         <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Servicios</p>
                         <div class="mt-2 flex flex-wrap gap-2">
-                            <span v-for="service in selectedZone.services" :key="service" class="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{{ service }}</span>
+                            <span v-for="service in selectedZone.services" :key="service" class="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">{{ serviceLabels[service] ?? service }}</span>
                         </div>
+                    </div>
+
+                    <div v-if="selectedZone.notes" class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/80">
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Información adicional</p>
+                        <p class="mt-2 whitespace-pre-line text-sm text-slate-600 dark:text-slate-300">{{ selectedZone.notes }}</p>
+                    </div>
+
+                    <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/80">
+                        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">¿Es confiable esta zona?</p>
+                        <div class="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
+                            <span class="inline-flex items-center gap-1"><ThumbsUp class="h-4 w-4 text-emerald-600" /> {{ selectedZone.reliable_votes }} confiable</span>
+                            <span class="inline-flex items-center gap-1"><ThumbsDown class="h-4 w-4 text-red-600" /> {{ selectedZone.unreliable_votes }} no confiable</span>
+                        </div>
+                        <div class="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:opacity-60"
+                                :class="selectedZone.my_vote === 'reliable' ? 'bg-emerald-600 text-white' : 'border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300'"
+                                :aria-pressed="selectedZone.my_vote === 'reliable'"
+                                :disabled="voting"
+                                @click="vote(selectedZone.id, 'reliable')"
+                            >
+                                <ThumbsUp class="h-4 w-4" /> Es confiable
+                            </button>
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition disabled:opacity-60"
+                                :class="selectedZone.my_vote === 'unreliable' ? 'bg-red-600 text-white' : 'border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300'"
+                                :aria-pressed="selectedZone.my_vote === 'unreliable'"
+                                :disabled="voting"
+                                @click="vote(selectedZone.id, 'unreliable')"
+                            >
+                                <ThumbsDown class="h-4 w-4" /> No es confiable
+                            </button>
+                        </div>
+                        <p v-if="selectedZone.my_vote" class="mt-2 text-xs text-slate-500 dark:text-slate-400">Puedes cambiar tu voto cuando quieras. Todos ven estos totales.</p>
                     </div>
 
                     <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/80">

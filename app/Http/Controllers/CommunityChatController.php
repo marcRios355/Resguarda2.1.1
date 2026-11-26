@@ -7,8 +7,8 @@ use App\Services\MessageNotifier;
 use App\Services\PrivateImageStorage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Inertia\Inertia;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class CommunityChatController extends Controller
@@ -73,7 +73,7 @@ class CommunityChatController extends Controller
      * Las fotografías del chat comunitario solo se entregan a usuarios con
      * sesión iniciada y nunca si el mensaje fue ocultado por moderación.
      */
-    public function photo(Request $request, CommunityMessage $communityMessage): StreamedResponse
+    public function photo(Request $request, CommunityMessage $communityMessage): Response
     {
         abort_if($communityMessage->is_hidden && ! $request->user()->isAdmin(), 404);
 

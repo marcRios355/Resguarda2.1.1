@@ -2,20 +2,28 @@
 
 namespace App\Services;
 
+use App\Models\StoredImage;
+use Illuminate\Http\Response;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use RuntimeException;
-use Symfony\Component\HttpFoundation\StreamedResponse;
-use Throwable;
 
 /**
- * Guarda fotografías en el disco privado eliminando sus metadatos (EXIF, GPS,
+ * Guarda fotografías en la base de datos eliminando sus metadatos (EXIF, GPS,
  * XMP) para que no revelen la ubicación ni el dispositivo de quien las envía.
- * Los archivos solo se entregan a través de controladores con autorización.
+ * Al estar en la base de datos persisten aunque el servidor se reinicie o se
+ * vuelva a desplegar. Solo se entregan a través de controladores con
+ * autorización.
  */
 class PrivateImageStorage
 {
-    private const DISK = 'local';
+    /** Disco donde quedaron las fotografías anteriores a este cambio. */
+    private const LEGACY_DISK = 'local';
+
+    /** Tamaño en bytes de cada fragmento antes de codificarlo en base64. */
+    private const CHUNK_BYTES = 512 * 1024;
 
     /**
      * Reglas de validación compartidas para fotografías subidas por usuarios.
@@ -35,19 +43,36 @@ class PrivateImageStorage
 
     public function store(UploadedFile $file, string $directory): string
     {
-        $path = $file->store($directory, self::DISK);
+        $contents = $file->get();
 
-        if ($path === false) {
-            throw new RuntimeException('No fue posible guardar la fotografía.');
+        if ($contents === false || $contents === '') {
+            throw new RuntimeException('No fue posible leer la fotografía.');
         }
 
-        try {
-            $this->stripImageMetadata($path);
-        } catch (Throwable $exception) {
-            $this->delete($path);
+        $mimeType = (string) $file->getMimeType();
+        $sanitized = $this->stripImageMetadata($contents, $mimeType);
+        $extension = match ($mimeType) {
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            default => 'jpg',
+        };
+        $path = trim($directory, '/').'/'.Str::uuid()->toString().'.'.$extension;
 
-            throw $exception;
-        }
+        DB::transaction(function () use ($path, $mimeType, $sanitized): void {
+            $image = StoredImage::create([
+                'path' => $path,
+                'mime_type' => $mimeType,
+                'size' => strlen($sanitized),
+            ]);
+
+            foreach (str_split($sanitized, self::CHUNK_BYTES) as $position => $chunk) {
+                DB::table('stored_image_chunks')->insert([
+                    'stored_image_id' => $image->id,
+                    'position' => $position,
+                    'data' => base64_encode($chunk),
+                ]);
+            }
+        });
 
         return $path;
     }
@@ -58,41 +83,65 @@ class PrivateImageStorage
             return;
         }
 
-        $disk = Storage::disk(self::DISK);
+        StoredImage::where('path', $path)->delete();
+
+        $disk = Storage::disk(self::LEGACY_DISK);
 
         if ($disk->exists($path) && ! $disk->delete($path)) {
             throw new RuntimeException('No fue posible retirar una fotografía reemplazada o eliminada.');
         }
     }
 
-    public function response(?string $path): StreamedResponse
+    /**
+     * Devuelve el contenido de la fotografía, o null si no existe.
+     */
+    public function contents(?string $path): ?string
     {
-        abort_if($path === null, 404);
+        if ($path === null) {
+            return null;
+        }
 
-        $disk = Storage::disk(self::DISK);
-        abort_unless($disk->exists($path), 404);
+        $image = StoredImage::firstWhere('path', $path);
 
-        return $disk->response($path, null, [
-            'Cache-Control' => 'private, no-store, max-age=0',
-            'X-Content-Type-Options' => 'nosniff',
-        ], 'inline');
+        if ($image !== null) {
+            return DB::table('stored_image_chunks')
+                ->where('stored_image_id', $image->id)
+                ->orderBy('position')
+                ->pluck('data')
+                ->map(fn (string $chunk): string => (string) base64_decode($chunk, true))
+                ->implode('');
+        }
+
+        $disk = Storage::disk(self::LEGACY_DISK);
+
+        return $disk->exists($path) ? $disk->get($path) : null;
     }
 
-    private function stripImageMetadata(string $path): void
+    public function response(?string $path): Response
     {
-        $disk = Storage::disk(self::DISK);
-        $contents = $disk->get($path);
+        $contents = $this->contents($path);
+        abort_if($contents === null, 404);
 
-        $sanitized = match ($disk->mimeType($path)) {
+        $mimeType = StoredImage::where('path', $path)->value('mime_type')
+            ?? (Storage::disk(self::LEGACY_DISK)->mimeType((string) $path) ?: 'application/octet-stream');
+
+        return response($contents, 200, [
+            'Content-Type' => $mimeType,
+            'Content-Length' => (string) strlen($contents),
+            'Content-Disposition' => 'inline',
+            'Cache-Control' => 'private, max-age=3600',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    private function stripImageMetadata(string $contents, string $mimeType): string
+    {
+        return match ($mimeType) {
             'image/jpeg' => $this->stripJpegMetadata($contents),
             'image/png' => $this->stripPngMetadata($contents),
             'image/webp' => $this->stripWebpMetadata($contents),
             default => throw new RuntimeException('El formato de la fotografía no está permitido.'),
         };
-
-        if (! $disk->put($path, $sanitized)) {
-            throw new RuntimeException('No fue posible proteger los metadatos de la fotografía.');
-        }
     }
 
     private function stripJpegMetadata(string $image): string

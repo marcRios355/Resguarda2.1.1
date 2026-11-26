@@ -332,10 +332,9 @@ class ResguardaAssistant
             .' Las distancias proporcionadas son en línea recta; sugiere usar la opción Cómo llegar del mapa para ver la ruta.'
             .' Ante una emergencia en curso o peligro para la vida, prioriza las indicaciones de las autoridades y recuerda las líneas de emergencia de Perú: 105 (Policía Nacional), 116 (Bomberos) y 106 (SAMU), además del botón SOS de RESGUARDA.'
             .' Usa el historial de la conversación para entender preguntas de seguimiento.'
-            .' Sé breve y directo: responde en menos de 180 palabras salvo que el usuario pida más detalle.'
-            .' No utilices formato Markdown. No escribas asteriscos para crear negritas o cursivas. '
-            .' Presenta las respuestas en texto plano, con listas numeradas y párrafos claros. '
-            .' Puedes usar títulos sencillos sin símbolos decorativos.';
+            .' Responde como en un chat: frases cortas y directas, en menos de 80 palabras, salvo que el usuario pida más detalle.'
+            .' Si das pasos, usa como máximo 4 puntos breves. No repitas advertencias ni la pregunta del usuario.'
+            .' No utilices formato Markdown ni asteriscos; escribe en texto plano sin títulos.';
 
         if ($context !== null && trim($context) !== '') {
             $prompt .= PHP_EOL.PHP_EOL.$context;

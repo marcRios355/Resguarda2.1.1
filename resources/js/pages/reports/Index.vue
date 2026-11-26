@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Head, usePage } from '@inertiajs/vue3';
-import { AlertTriangle, CheckCircle2, LoaderCircle, LocateFixed, ShieldAlert, XCircle } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { AlertTriangle, CheckCircle2, LoaderCircle, LocateFixed, ShieldAlert, ShieldCheck, XCircle } from '@lucide/vue';
+import { computed, onMounted, ref } from 'vue';
 import { useGeolocation } from '@/composables/useGeolocation';
 
 const page = usePage();
@@ -34,6 +34,7 @@ const props = defineProps<{
         address_reference: string | null;
     }>;
     selected_district_id?: number;
+    filtered_district_name?: string | null;
 }>();
 
 const selectedDistrictId = ref<number | ''>(props.selected_district_id ?? props.districts[0]?.id ?? '');
@@ -41,20 +42,73 @@ const selectedDistrict = computed(() => props.districts.find((district) => distr
 const { coords, statusMessage, isLocating, locate, lookupDistrict } = useGeolocation();
 const useExactLocation = ref(false);
 const locationNote = ref('');
+const zoneIsSafe = ref(false);
+const incidentType = ref('inundacion');
+const severity = ref('media');
+
+/** Punto elegido al tocar el mapa (llega como ?lat=&lng= en la URL). */
+const pinnedPoint = ref<{ latitude: number; longitude: number } | null>(null);
 
 /*
  * Sin ubicación exacta se mantiene el comportamiento anterior: el reporte se
  * asocia al centro del distrito elegido.
  */
 const latitude = computed(() =>
-    useExactLocation.value && coords.value ? coords.value.latitude : (selectedDistrict.value?.latitude ?? -8.1116),
+    pinnedPoint.value?.latitude ?? (useExactLocation.value && coords.value ? coords.value.latitude : (selectedDistrict.value?.latitude ?? -8.1116)),
 );
 const longitude = computed(() =>
-    useExactLocation.value && coords.value ? coords.value.longitude : (selectedDistrict.value?.longitude ?? -79.0287),
+    pinnedPoint.value?.longitude ?? (useExactLocation.value && coords.value ? coords.value.longitude : (selectedDistrict.value?.longitude ?? -79.0287)),
 );
+
+const setZoneIsSafe = (isSafe: boolean) => {
+    zoneIsSafe.value = isSafe;
+    incidentType.value = isSafe ? 'zona_segura' : 'inundacion';
+    severity.value = isSafe ? 'baja' : 'media';
+};
+
+const describeDistrict = (district: { id: number; name: string } | null, approximate: boolean) => {
+    if (!district) {
+        locationNote.value = 'Ubicación registrada, pero parece estar fuera de la provincia de Trujillo. Elige el distrito manualmente.';
+
+        return;
+    }
+
+    selectedDistrictId.value = district.id;
+    locationNote.value = approximate
+        ? `Ubicación registrada. Distrito sugerido: ${district.name} (aproximado, confírmalo).`
+        : `Ubicación registrada en el distrito ${district.name}.`;
+};
+
+onMounted(async () => {
+    const params = new URLSearchParams(window.location.search);
+    const lat = Number.parseFloat(params.get('lat') ?? '');
+    const lng = Number.parseFloat(params.get('lng') ?? '');
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        return;
+    }
+
+    pinnedPoint.value = { latitude: lat, longitude: lng };
+    locationNote.value = 'Publicarás en el punto elegido en el mapa.';
+    document.getElementById('nueva-publicacion')?.scrollIntoView({ behavior: 'smooth' });
+
+    try {
+        const response = await fetch(`/location/lookup?latitude=${lat}&longitude=${lng}`, {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        });
+
+        if (response.ok) {
+            const result = (await response.json()) as { district: { id: number; name: string } | null; approximate: boolean };
+            describeDistrict(result.district, result.approximate);
+        }
+    } catch {
+        // Si falla la consulta, el usuario elige el distrito manualmente.
+    }
+});
 
 const useMyLocation = async () => {
     locationNote.value = '';
+    pinnedPoint.value = null;
     const position = await locate({ force: true });
 
     if (!position) {
@@ -66,19 +120,12 @@ const useMyLocation = async () => {
 
     useExactLocation.value = true;
     const result = await lookupDistrict();
-
-    if (result?.district) {
-        selectedDistrictId.value = result.district.id;
-        locationNote.value = result.approximate
-            ? `Ubicación registrada. Distrito sugerido: ${result.district.name} (aproximado, confírmalo).`
-            : `Ubicación registrada en el distrito ${result.district.name}.`;
-    } else {
-        locationNote.value = 'Ubicación registrada, pero parece estar fuera de la provincia de Trujillo. Elige el distrito manualmente.';
-    }
+    describeDistrict(result?.district ?? null, result?.approximate ?? false);
 };
 
 const clearExactLocation = () => {
     useExactLocation.value = false;
+    pinnedPoint.value = null;
     locationNote.value = '';
 };
 
@@ -116,10 +163,19 @@ const severityClasses: Record<string, string> = {
             </div>
         </section>
 
-        <section class="rounded-2xl border border-orange-200 bg-orange-50/70 p-4 shadow-sm dark:border-orange-900/60 dark:bg-orange-950/20 sm:p-5">
+        <section id="nueva-publicacion" class="scroll-mt-4 rounded-2xl border border-orange-200 bg-orange-50/70 p-4 shadow-sm dark:border-orange-900/60 dark:bg-orange-950/20 sm:p-5">
             <div>
-                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-orange-700 dark:text-orange-300">Nuevo reporte</p>
-                <h2 class="mt-2 text-xl font-bold text-slate-900 dark:text-white">Cuéntale a Trujillo qué está pasando</h2>
+                <p class="text-xs font-semibold uppercase tracking-[0.2em] text-orange-700 dark:text-orange-300">Nueva publicación</p>
+                <h2 class="mt-2 text-xl font-bold text-slate-900 dark:text-white">Cuéntale a Trujillo cómo está la zona</h2>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-2 sm:max-w-md" role="group" aria-label="Estado de la zona">
+                <button type="button" :aria-pressed="!zoneIsSafe" class="inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition" :class="!zoneIsSafe ? 'border-orange-600 bg-orange-600 text-white' : 'border-slate-300 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'" @click="setZoneIsSafe(false)">
+                    <AlertTriangle class="h-4 w-4" /> Zona con problema
+                </button>
+                <button type="button" :aria-pressed="zoneIsSafe" class="inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition" :class="zoneIsSafe ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'" @click="setZoneIsSafe(true)">
+                    <ShieldCheck class="h-4 w-4" /> Zona segura
+                </button>
             </div>
 
             <form method="post" action="/reports" class="mt-5 grid gap-4 md:grid-cols-2">
@@ -140,15 +196,17 @@ const severityClasses: Record<string, string> = {
                             <LocateFixed v-else class="h-4 w-4" />
                             {{ useExactLocation ? 'Actualizar ubicación' : 'Usar mi ubicación actual' }}
                         </button>
-                        <button v-if="useExactLocation" type="button" class="text-xs font-medium text-slate-600 underline dark:text-slate-300" @click="clearExactLocation">Usar el centro del distrito</button>
+                        <button v-if="useExactLocation || pinnedPoint" type="button" class="text-xs font-medium text-slate-600 underline dark:text-slate-300" @click="clearExactLocation">Usar el centro del distrito</button>
                     </div>
                     <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" role="status">
                         {{ locationNote || 'Opcional. Si no la usas, el reporte se ubicará en el centro del distrito elegido.' }}
                     </p>
                 </div>
-                <label class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                <input v-if="zoneIsSafe" type="hidden" name="incident_type" value="zona_segura" />
+                <input v-if="zoneIsSafe" type="hidden" name="severity" value="baja" />
+                <label v-if="!zoneIsSafe" class="text-sm font-medium text-slate-700 dark:text-slate-200">
                     Tipo de incidente
-                    <select name="incident_type" required class="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900">
+                    <select v-model="incidentType" name="incident_type" required class="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900">
                         <option value="inundacion">Inundación</option>
                         <option value="huaico">Huaico</option>
                         <option value="desborde">Desborde</option>
@@ -166,9 +224,9 @@ const severityClasses: Record<string, string> = {
                     Descripción
                     <textarea name="description" required maxlength="1000" rows="3" class="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900" placeholder="Describe lo que viste, cuándo ocurrió y cómo afecta a la zona." />
                 </label>
-                <label class="text-sm font-medium text-slate-700 dark:text-slate-200">
-                    Severidad
-                    <select name="severity" required class="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900">
+                <label v-if="!zoneIsSafe" class="text-sm font-medium text-slate-700 dark:text-slate-200">
+                    Gravedad
+                    <select v-model="severity" name="severity" required class="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900">
                         <option value="baja">Baja</option>
                         <option value="media">Media</option>
                         <option value="alta">Alta</option>
@@ -180,17 +238,22 @@ const severityClasses: Record<string, string> = {
                     <input name="address_reference" maxlength="255" class="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900" placeholder="Calle, avenida o punto cercano" />
                 </label>
                 <button type="submit" class="inline-flex items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-700 md:col-span-2">
-                    <AlertTriangle class="h-4 w-4" /> Enviar reporte
+                    <AlertTriangle class="h-4 w-4" /> Publicar
                 </button>
             </form>
         </section>
 
         <section class="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
             <div class="space-y-4">
+                <div v-if="props.filtered_district_name" class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+                    <span>Publicaciones de {{ props.filtered_district_name }} ({{ props.reports.length }})</span>
+                    <Link href="/reports" class="font-semibold underline">Ver todas</Link>
+                </div>
+                <p v-if="!props.reports.length" class="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">Aún no hay publicaciones.</p>
                 <div v-for="report in props.reports" :key="report.id" class="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950/70">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                            <h2 class="text-xl font-bold text-slate-900 dark:text-white">{{ report.title }}</h2>
+                            <Link :href="`/reports/${report.id}`" class="text-xl font-bold text-slate-900 hover:underline dark:text-white">{{ report.title }}</Link>
                             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ report.user_name ?? 'Ciudadano anónimo' }} · {{ report.district_name ?? 'Sin distrito' }}</p>
                         </div>
                         <span :class="['rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide', statusClasses[report.status] || 'bg-slate-100 text-slate-700']">

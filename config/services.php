@@ -48,4 +48,14 @@ return [
         'thinking_level' => env('GEMINI_THINKING_LEVEL', 'MINIMAL'),
     ],
 
+    'tomtom' => [
+        'key' => env('TOMTOM_API_KEY'),
+        // relative0 colorea cada calle según su velocidad actual frente a la libre.
+        'style' => env('TOMTOM_TRAFFIC_STYLE', 'relative0'),
+    ],
+
+    'overpass' => [
+        'url' => env('OVERPASS_URL', 'https://overpass-api.de/api/interpreter'),
+    ],
+
 ];

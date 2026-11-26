@@ -22,7 +22,7 @@ defineProps<{
 </script>
 
 <template>
-    <Head title="Recuperar Contraseña - RESGUARDA" />
+    <Head title="Recuperar contraseña" />
 
     <div
         v-if="status"

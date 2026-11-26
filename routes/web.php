@@ -11,6 +11,7 @@ use App\Http\Controllers\DistrictZoneController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\LostFoundItemController;
 use App\Http\Controllers\MapController;
+use App\Http\Controllers\MapLiveController;
 use App\Http\Controllers\NeedHelpRequestController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PrivateChatController;
@@ -22,26 +23,39 @@ use App\Http\Controllers\SosDeliveryReviewController;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+use Inertia\Response as InertiaResponse;
+use Laravel\Fortify\Features;
 
-Route::get('/', fn (Request $request): RedirectResponse => redirect()->route($request->user() ? 'map' : 'login'))
+// Pantalla de bienvenida para visitantes; quien ya inició sesión va directo al mapa.
+Route::get('/', fn (Request $request): RedirectResponse|InertiaResponse => $request->user()
+    ? redirect()->route('map')
+    : Inertia::render('Welcome', ['canRegister' => Features::enabled(Features::registration())]))
     ->name('home');
 
 Route::middleware(['auth'])->group(function () {
     // El mapa es la pantalla principal; se conserva /dashboard para enlaces antiguos.
     Route::redirect('dashboard', '/map')->name('dashboard');
     Route::get('map', [MapController::class, 'index'])->name('map');
+    Route::get('map/open-spaces', [MapLiveController::class, 'openSpaces'])->middleware('throttle:30,1')->name('map.open-spaces');
+    Route::get('map/crowd-streets', [MapLiveController::class, 'crowdStreets'])->middleware('throttle:30,1')->name('map.crowd-streets');
+    Route::get('map/traffic/{zoom}/{x}/{y}.png', [MapLiveController::class, 'traffic'])->whereNumber(['zoom', 'x', 'y'])->middleware('throttle:900,1')->name('map.traffic');
     Route::get('location/lookup', [LocationController::class, 'lookup'])
         ->middleware('throttle:60,1')
         ->name('location.lookup');
     Route::get('safe-zones', [SafeZoneController::class, 'index'])->name('safe-zones.index');
+    Route::post('safe-zones', [SafeZoneController::class, 'store'])->middleware('throttle:10,1')->name('safe-zones.store');
     Route::get('safe-zones/{safeZone}', [SafeZoneController::class, 'show'])->name('safe-zones.show');
+    Route::post('safe-zones/{safeZone}/vote', [SafeZoneController::class, 'vote'])->middleware('throttle:30,1')->name('safe-zones.vote');
 
     Route::get('reports', [ReportController::class, 'index'])->name('reports.index');
     Route::post('reports', [ReportController::class, 'store'])->name('reports.store');
+    Route::get('reports/{report}', [ReportController::class, 'show'])->name('reports.show');
     Route::post('reports/{report}/vote', [ReportController::class, 'vote'])->name('reports.vote');
 
     Route::get('evidence', [CitizenEvidenceController::class, 'index'])->name('citizen-evidence.index');
     Route::post('evidence', [CitizenEvidenceController::class, 'store'])->name('citizen-evidence.store');
+    Route::get('evidence/{evidence}/photo', [CitizenEvidenceController::class, 'photo'])->name('citizen-evidence.photo');
     Route::post('evidence/{evidence}/vote', [CitizenEvidenceController::class, 'vote'])->name('citizen-evidence.vote');
     Route::post('evidence/{evidence}/report', [CitizenEvidenceController::class, 'report'])->name('citizen-evidence.report');
     Route::patch('evidence/{evidence}/status', [CitizenEvidenceController::class, 'updateStatus'])->name('citizen-evidence.status');

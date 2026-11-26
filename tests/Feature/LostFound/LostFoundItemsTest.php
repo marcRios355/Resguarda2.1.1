@@ -2,6 +2,7 @@
 
 use App\Models\LostFoundItem;
 use App\Models\User;
+use App\Services\PrivateImageStorage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -42,10 +43,10 @@ test('authenticated users can publish a lost or found item with a private photo'
         'category' => 'keys',
         'status' => 'open',
     ]);
-    Storage::disk('local')->assertExists($item->photo_path);
-    $storedPhoto = Storage::disk('local')->get($item->photo_path);
-    expect($storedPhoto)->not->toContain('eXIf')
-        ->and(getimagesize(Storage::disk('local')->path($item->photo_path)))->not->toBeFalse();
+    $storedPhoto = app(PrivateImageStorage::class)->contents($item->photo_path);
+    expect($storedPhoto)->not->toBeNull()
+        ->and($storedPhoto)->not->toContain('eXIf')
+        ->and(getimagesizefromstring($storedPhoto))->not->toBeFalse();
 
     $this->actingAs($user)
         ->get(route('lost-found.show', $item))
@@ -57,7 +58,7 @@ test('authenticated users can publish a lost or found item with a private photo'
         ->get(route('lost-found.photo', $item))
         ->assertOk()
         ->assertHeader('X-Content-Type-Options', 'nosniff')
-        ->assertHeader('Cache-Control', 'max-age=0, no-store, private');
+        ->assertHeader('Cache-Control', 'max-age=3600, private');
 });
 
 test('the listing can be filtered by type and category without exposing owner contact data', function () {

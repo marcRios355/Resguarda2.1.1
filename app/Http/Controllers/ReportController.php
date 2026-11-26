@@ -9,15 +9,39 @@ use App\Services\DistrictLocator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ReportController extends Controller
 {
+    /**
+     * Tipos de publicación permitidos, incluidas las zonas que el ciudadano
+     * considera seguras.
+     *
+     * @var list<string>
+     */
+    public const INCIDENT_TYPES = [
+        'inundacion',
+        'huaico',
+        'desborde',
+        'calle_bloqueada',
+        'zona_en_riesgo',
+        'zona_segura',
+        'personas_atrapadas',
+        'zona_despejada',
+        'zona_en_proceso_despeje',
+        'otro',
+    ];
+
     public function index(Request $request): Response
     {
+        $districts = District::select('id', 'name', 'slug', 'risk_level', 'latitude', 'longitude')->get();
+        $selectedDistrict = $districts->first(fn (District $district): bool => $district->slug === $request->string('district')->toString());
+
         $reports = Report::with(['user', 'district', 'confirmations'])
+            ->when($selectedDistrict, fn ($query) => $query->where('district_id', $selectedDistrict->id))
             ->latest()
             ->get()
             ->map(function (Report $report): array {
@@ -42,9 +66,6 @@ class ReportController extends Controller
             })
             ->all();
 
-        $districts = District::select('id', 'name', 'slug', 'risk_level', 'latitude', 'longitude')->get();
-        $selectedDistrict = $districts->first(fn (District $district): bool => $district->slug === $request->string('district')->toString());
-
         return Inertia::render('reports/Index', [
             'reports' => $reports,
             'districts' => $districts->map(fn (District $district): array => [
@@ -56,6 +77,33 @@ class ReportController extends Controller
                 'longitude' => (float) $district->longitude,
             ])->all(),
             'selected_district_id' => $selectedDistrict?->id,
+            'filtered_district_name' => $selectedDistrict?->name,
+        ]);
+    }
+
+    public function show(Report $report): Response
+    {
+        $report->load(['user:id,name', 'district:id,name']);
+
+        return Inertia::render('reports/Show', [
+            'report' => [
+                'id' => $report->id,
+                'title' => $report->title,
+                'description' => $report->description,
+                'incident_type' => $report->incident_type,
+                'severity' => $report->severity,
+                'status' => $report->status,
+                'status_label' => $report->statusLabel,
+                'district_name' => $report->district?->name,
+                'user_name' => $report->user?->name,
+                'confirmations_count' => $report->confirmations_count,
+                'rejections_count' => $report->rejections_count,
+                'created_at' => $report->created_at?->toIso8601String(),
+                'latitude' => (float) $report->latitude,
+                'longitude' => (float) $report->longitude,
+                'address_reference' => $report->address_reference,
+                'vote' => $report->confirmations()->where('user_id', Auth::id())->value('vote'),
+            ],
         ]);
     }
 
@@ -63,7 +111,7 @@ class ReportController extends Controller
     {
         $validated = $request->validate([
             'district_id' => ['required', 'exists:districts,id'],
-            'incident_type' => ['required', 'string'],
+            'incident_type' => ['required', 'string', Rule::in(self::INCIDENT_TYPES)],
             'title' => ['required', 'string', 'max:150'],
             'description' => ['required', 'string', 'max:1000'],
             'latitude' => ['required', 'numeric', 'between:-90,90'],
@@ -97,7 +145,7 @@ class ReportController extends Controller
             'rejections_count' => 0,
         ]);
 
-        return redirect()->route('reports.index')->with('status', 'Reporte registrado y pendiente de validación comunitaria.');
+        return redirect()->route('reports.show', $report)->with('status', 'Publicación registrada y pendiente de validación comunitaria.');
     }
 
     public function vote(Request $request, Report $report): RedirectResponse

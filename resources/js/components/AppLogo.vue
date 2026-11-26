@@ -1,19 +1,13 @@
 <script setup lang="ts">
-import { usePage } from '@inertiajs/vue3';
 import AppLogoIcon from '@/components/AppLogoIcon.vue';
-
-const name = usePage().props.name;
 </script>
 
 <template>
-    <div
-        class="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-md"
-    >
-        <AppLogoIcon class="size-5 fill-current text-white dark:text-black" />
+    <div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-[#0b2545] dark:bg-white">
+        <AppLogoIcon class="h-6 w-5 text-white dark:text-[#0b2545]" />
     </div>
     <div class="ml-1 grid flex-1 text-left text-sm">
-        <span class="mb-0.5 truncate leading-tight font-semibold">{{
-            name
-        }}</span>
+        <span class="truncate leading-tight font-bold tracking-[0.14em]">RESGUARDA</span>
+        <span class="truncate text-[11px] leading-tight text-muted-foreground">Trujillo · Prevención</span>
     </div>
 </template>

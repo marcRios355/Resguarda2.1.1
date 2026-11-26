@@ -23,7 +23,7 @@ defineOptions({
 </script>
 
 <template>
-    <Head title="Crear Cuenta - RESGUARDA" />
+    <Head title="Crear cuenta" />
 
     <Form
         v-bind="store.form()"
@@ -134,7 +134,7 @@ defineOptions({
                 data-test="register-user-button"
             >
                 <Spinner v-if="processing" />
-                Crear cuenta de Resguardo
+                Crear cuenta
             </Button>
         </div>
 

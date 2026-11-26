@@ -7,6 +7,7 @@ import { useGeolocation } from '@/composables/useGeolocation';
 
 const page = usePage();
 const csrfToken = computed(() => page.props.csrf_token ?? '');
+const formErrors = computed(() => (page.props.errors ?? {}) as Record<string, string>);
 
 const props = defineProps<{
     districts: Array<{
@@ -28,7 +29,7 @@ const props = defineProps<{
         is_still_happening: boolean;
         district_name: string | null;
         user_name: string | null;
-        photo_path: string | null;
+        photo_url: string | null;
         latitude: number;
         longitude: number;
         address_reference: string | null;
@@ -190,7 +191,9 @@ const statusClass: Record<string, string> = {
 
                 <label class="text-sm font-medium text-slate-700 dark:text-slate-200 md:col-span-2">
                     Fotografía
-                    <input type="file" name="photo" accept="image/*" class="mt-2 block w-full rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900" />
+                    <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" class="mt-2 block w-full rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900" />
+                    <span class="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400">JPG, PNG o WebP de hasta 8 MB.</span>
+                    <span v-if="formErrors.photo" class="mt-1 block text-xs font-semibold text-red-600" role="alert">{{ formErrors.photo }}</span>
                 </label>
 
                 <button type="submit" :disabled="props.districts.length === 0" class="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-2">
@@ -216,8 +219,8 @@ const statusClass: Record<string, string> = {
                         <span :class="severityClass[evidence.severity] ?? 'bg-slate-100 text-slate-700'" class="rounded-full px-2 py-1 text-xs font-semibold">{{ evidence.severity }}</span>
                     </div>
 
-                    <div v-if="evidence.photo_path" class="mt-4 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
-                        <img :src="evidence.photo_path" :alt="evidence.title" class="h-64 w-full object-cover" />
+                    <div v-if="evidence.photo_url" class="mt-4 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+                        <img :src="evidence.photo_url" loading="lazy" :alt="evidence.title" class="h-64 w-full object-cover" />
                     </div>
 
                     <p class="mt-4 text-sm leading-6 text-slate-700 dark:text-slate-200">

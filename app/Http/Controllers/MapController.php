@@ -4,14 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Alert;
 use App\Models\District;
+use App\Models\Report;
 use App\Models\SafeZone;
+use App\Services\LiveMapData;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class MapController extends Controller
 {
-    public function index(): Response
+    public function index(LiveMapData $live): Response
     {
         $hasRiskSnapshotsTable = Schema::hasTable('district_risk_snapshots');
         $hasAlertsTable = Schema::hasTable('alerts');
@@ -78,10 +80,30 @@ class MapController extends Controller
                 ->all()
             : [];
 
+        $reports = Report::query()
+            ->where('status', '!=', 'rejected')
+            ->latest()
+            ->limit(500)
+            ->get(['id', 'title', 'incident_type', 'severity', 'status', 'latitude', 'longitude'])
+            ->map(fn (Report $report): array => [
+                'id' => $report->id,
+                'title' => $report->title,
+                'incident_type' => $report->incident_type,
+                'severity' => $report->severity,
+                'latitude' => (float) $report->latitude,
+                'longitude' => (float) $report->longitude,
+                'url' => route('reports.show', $report),
+            ])
+            ->all();
+
         return Inertia::render('Map', [
             'districts' => $districts,
             'safeZones' => $safeZones,
             'activeAlerts' => $activeAlerts,
+            'reports' => $reports,
+            'crowds' => $live->crowdHotspots(),
+            'trafficEnabled' => $live->trafficEnabled(),
+            'updatedAt' => now()->toIso8601String(),
         ]);
     }
 }

@@ -26,7 +26,7 @@ const inputEmail = ref(props.email);
 </script>
 
 <template>
-    <Head title="Nueva Contraseña - RESGUARDA" />
+    <Head title="Nueva contraseña" />
 
     <Form
         v-bind="update.form()"

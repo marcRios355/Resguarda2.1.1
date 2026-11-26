@@ -4,7 +4,9 @@ use App\Models\CitizenEvidence;
 use App\Models\District;
 use App\Models\DistrictZone;
 use App\Models\NeedHelpRequest;
+use App\Models\StoredImage;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Schema;
 
 test('authenticated users can create a citizen evidence entry', function () {
@@ -349,4 +351,35 @@ test('admins can manage district zones', function () {
     $this->assertDatabaseMissing('district_zones', [
         'id' => $zone->id,
     ]);
+});
+
+test('evidence photos are stored in the database and any signed in user can see them', function () {
+    $district = District::factory()->create();
+    $author = User::factory()->create();
+    $viewer = User::factory()->create();
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/u2QAAAAASUVORK5CYII=', true);
+
+    $this->actingAs($author)->post(route('citizen-evidence.store'), [
+        'district_id' => $district->id,
+        'incident_type' => 'inundacion',
+        'title' => 'Calle inundada',
+        'description' => 'El agua cubre la vereda.',
+        'severity' => 'media',
+        'photo' => UploadedFile::fake()->createWithContent('calle.png', $png),
+    ])->assertSessionHasNoErrors();
+
+    $evidence = CitizenEvidence::sole();
+    expect(StoredImage::where('path', $evidence->photo_path)->exists())->toBeTrue();
+
+    $this->withoutVite();
+    $this->actingAs($viewer)
+        ->get(route('citizen-evidence.index', ['district_id' => $district->id]))
+        ->assertInertia(fn ($page) => $page->where('evidences.0.photo_url', route('citizen-evidence.photo', $evidence, false)));
+
+    $response = $this->actingAs($viewer)->get(route('citizen-evidence.photo', $evidence));
+    $response->assertOk()->assertHeader('Content-Type', 'image/png');
+    expect($response->getContent())->toBe($png);
+
+    auth()->logout();
+    $this->get(route('citizen-evidence.photo', $evidence))->assertRedirect(route('login'));
 });

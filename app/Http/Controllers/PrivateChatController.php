@@ -8,8 +8,8 @@ use App\Services\PrivateImageStorage;
 use App\Services\PrivateMessenger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Inertia\Inertia;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PrivateChatController extends Controller
 {
@@ -66,7 +66,7 @@ class PrivateChatController extends Controller
     /**
      * Solo los dos participantes de la conversación pueden ver sus fotografías.
      */
-    public function photo(Request $request, PrivateMessage $privateMessage): StreamedResponse
+    public function photo(Request $request, PrivateMessage $privateMessage): Response
     {
         $userId = $request->user()->id;
         abort_unless(in_array($userId, [$privateMessage->sender_id, $privateMessage->recipient_id], true), 403);

@@ -22,7 +22,7 @@ defineOptions({
 </script>
 
 <template>
-    <Head title="Confirm password" />
+    <Head title="Confirmar contraseña" />
 
     <PasskeyVerify
         :routes="{

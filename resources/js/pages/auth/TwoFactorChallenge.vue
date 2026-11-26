@@ -48,7 +48,7 @@ const toggleRecoveryMode = (clearErrors: () => void): void => {
 </script>
 
 <template>
-    <Head title="Two-factor authentication" />
+    <Head title="Verificación en dos pasos" />
 
     <div class="space-y-6">
         <template v-if="!showRecoveryInput">

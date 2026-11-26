@@ -6,15 +6,27 @@ use App\Models\CitizenEvidence;
 use App\Models\District;
 use App\Models\EvidenceReport;
 use App\Models\EvidenceVote;
+use App\Services\PrivateImageStorage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response as ImageResponse;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CitizenEvidenceController extends Controller
 {
+    public function __construct(private PrivateImageStorage $images) {}
+
+    /**
+     * Las fotografías de evidencias son visibles para cualquier usuario con
+     * sesión iniciada, desde cualquier dispositivo.
+     */
+    public function photo(CitizenEvidence $evidence): ImageResponse
+    {
+        return $this->images->response($evidence->photo_path);
+    }
+
     public function index(Request $request): Response
     {
         $districts = District::query()
@@ -62,7 +74,7 @@ class CitizenEvidenceController extends Controller
             'is_still_happening' => (bool) $evidence->is_still_happening,
             'district_name' => $evidence->district?->name,
             'user_name' => $evidence->user?->name,
-            'photo_path' => $evidence->photo_path ? Storage::disk('public')->url($evidence->photo_path) : null,
+            'photo_url' => $evidence->photo_path ? route('citizen-evidence.photo', $evidence, false) : null,
             'latitude' => (float) ($evidence->latitude ?? 0),
             'longitude' => (float) ($evidence->longitude ?? 0),
             'address_reference' => $evidence->address_reference,
@@ -103,13 +115,12 @@ class CitizenEvidenceController extends Controller
             'address_reference' => ['nullable', 'string', 'max:255'],
             'severity' => ['required', 'in:baja,media,alta,critica'],
             'is_still_happening' => ['nullable', 'boolean'],
-            'photo' => ['nullable', 'image', 'max:4096'],
+            'photo' => ['nullable', ...PrivateImageStorage::rules()],
         ]);
 
-        $photoPath = null;
-        if ($request->hasFile('photo')) {
-            $photoPath = $request->file('photo')->store('evidence', 'public');
-        }
+        $photoPath = $request->hasFile('photo')
+            ? $this->images->store($request->file('photo'), 'evidence')
+            : null;
 
         $evidence = CitizenEvidence::create([
             'user_id' => $request->user()->id,

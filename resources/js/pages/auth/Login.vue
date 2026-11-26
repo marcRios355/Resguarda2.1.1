@@ -27,7 +27,7 @@ defineProps<{
 </script>
 
 <template>
-    <Head title="Iniciar Sesión - RESGUARDA" />
+    <Head title="Iniciar sesión" />
 
     <div
         v-if="status"
